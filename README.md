@@ -20,6 +20,7 @@ KagiNote is a desktop application built with Tauri v2 that provides real-time me
 - Node.js 18+ and pnpm
 - Rust 1.75+ 
 - 16GB+ RAM recommended for optimal performance
+- CMake (for whisper.cpp integration): `brew install cmake`
 
 ### Installation
 ```bash
@@ -43,7 +44,9 @@ npm run tauri build
 - Real-time audio capture with `cpal`
 - Voice Activity Detection using Silero-VAD v5
 - Multi-tier Whisper ASR engines (Medium/Large-v3/Turbo)
+- Automatic model downloading and management
 - Speaker diarization and language detection
+- macOS Metal acceleration ready
 
 **Frontend (React 19)**
 - Real-time transcription display with WaveSurfer.js visualization

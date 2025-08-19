@@ -4,5 +4,6 @@
 
 pub mod types;
 pub mod whisper;
+pub mod model_manager;
 
 pub use types::*;

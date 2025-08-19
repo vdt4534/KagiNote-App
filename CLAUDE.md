@@ -38,6 +38,16 @@ npm run tauri build  # Build production app bundle
 pnpm install         # Install dependencies (uses pnpm)
 ```
 
+**Build Requirements:**
+```bash
+# Required for whisper.cpp integration
+brew install cmake
+
+# Verify Rust environment
+source ~/.cargo/env
+cargo check
+```
+
 ## Audio Processing Architecture
 
 The app is designed for audio capture and processing:
@@ -77,7 +87,8 @@ The app is designed for audio capture and processing:
 **Backend Modules:**
 - `src-tauri/src/audio/capture.rs` - Cross-platform audio capture using cpal
 - `src-tauri/src/audio/vad.rs` - Silero-VAD v5 for voice activity detection
-- `src-tauri/src/asr/whisper.rs` - Multi-tier Whisper ASR engine
+- `src-tauri/src/asr/whisper.rs` - Multi-tier Whisper ASR engine with macOS Metal support
+- `src-tauri/src/asr/model_manager.rs` - Automatic model downloading and caching
 - `src-tauri/src/commands.rs` - Tauri API interface layer
 
 **Frontend Components:**
@@ -160,3 +171,22 @@ cargo bench pipeline_benchmark
 - TypeScript strict mode enabled with full type safety
 - Privacy-first architecture validated through security audit
 - Cross-platform compatibility tested on Windows, macOS, Linux
+
+## Model Integration Status
+
+**Current State:**
+- Model download system implemented with automatic caching
+- macOS Metal acceleration framework ready
+- Whisper.cpp integration foundation in place
+- Quantized model support (Q4_0, Q5_0) for different performance tiers
+
+**Whisper.cpp Integration:**
+- Dependencies available: `reqwest`, `futures-util` for model downloads
+- Build system ready with CMake requirement documented
+- Model paths: Standard (800MB), High-Accuracy (2.4GB), Turbo (1.2GB)
+- Storage location: `~/Library/Application Support/KagiNote/models/`
+
+**Next Steps for Full Integration:**
+1. Uncomment `whisper-rs` dependency in Cargo.toml
+2. Ensure CMake is installed: `brew install cmake`
+3. Replace simulation code with actual whisper.cpp calls

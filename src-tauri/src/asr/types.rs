@@ -145,7 +145,7 @@ pub enum ASRError {
 }
 
 /// Model tier selection
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum ModelTier {
     Standard,       // Whisper Medium - balanced performance
     HighAccuracy,   // Whisper Large-v3 - best accuracy
