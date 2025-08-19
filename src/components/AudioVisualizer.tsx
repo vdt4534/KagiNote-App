@@ -101,7 +101,6 @@ export const AudioVisualizer: React.FC<AudioVisualizerProps> = ({
           waveColor: waveformColor,
           progressColor: progressColor,
           height: height,
-          responsive: true,
           normalize: true,
           interact: true,
         });
@@ -439,7 +438,7 @@ export const AudioVisualizer: React.FC<AudioVisualizerProps> = ({
       </div>
 
       {/* CSS Animation for recording pulse */}
-      <style jsx>{`
+      <style>{`
         @keyframes pulse {
           0%, 100% { opacity: 1; }
           50% { opacity: 0.5; }

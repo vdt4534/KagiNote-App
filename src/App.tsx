@@ -1,5 +1,4 @@
-import React, { useState, useEffect } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { useState, useEffect } from "react";
 import { AudioVisualizer } from "./components/AudioVisualizer";
 import { TranscriptionController, FinalTranscriptionResult, TranscriptionError, TranscriptionUpdateEvent } from "./components/TranscriptionController";
 import "./App.css";
@@ -177,7 +176,7 @@ function App() {
         )}
       </div>
 
-      <style jsx>{`
+      <style>{`
         .loading-container {
           display: flex;
           flex-direction: column;

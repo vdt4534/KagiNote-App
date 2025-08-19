@@ -5,7 +5,7 @@
  * real-time updates, and system monitoring.
  */
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
 
@@ -467,7 +467,7 @@ export const TranscriptionController: React.FC<TranscriptionControllerProps> = (
         )}
 
         {/* Performance Warnings */}
-        {systemStatus.processingMetrics?.realTimeFactor > 1.0 && (
+        {(systemStatus.processingMetrics?.realTimeFactor ?? 0) > 1.0 && (
           <div data-testid="performance-warning" className="warning">
             <div>Processing slower than real-time detected</div>
             <div data-testid="performance-suggestions">
@@ -476,7 +476,7 @@ export const TranscriptionController: React.FC<TranscriptionControllerProps> = (
           </div>
         )}
 
-        {systemStatus.processingMetrics?.averageLatency > 3000 && (
+        {(systemStatus.processingMetrics?.averageLatency ?? 0) > 3000 && (
           <div className="warning">
             <div>High latency detected</div>
           </div>
@@ -599,7 +599,7 @@ export const TranscriptionController: React.FC<TranscriptionControllerProps> = (
       {/* Error Display */}
       {renderErrors()}
 
-      <style jsx>{`
+      <style>{`
         .transcription-controller {
           padding: 20px;
           max-width: 800px;

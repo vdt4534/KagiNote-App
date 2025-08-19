@@ -36,7 +36,7 @@
     "vite": "^7.0.4",
     "@testing-library/react": "^16.0.1",
     "@testing-library/jest-dom": "^6.7.0",
-    "@testing-library/user-event": "^14.8.1",
+    "@testing-library/user-event": "^14.6.1",
     "@playwright/test": "^1.50.1",
     "vitest": "^3.2.4",
     "@vitest/ui": "^3.2.4",
