@@ -7,7 +7,12 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "test": "vitest",
+    "test:ui": "vitest --ui",
+    "test:coverage": "vitest --coverage",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui"
   },
   "dependencies": {
     "@radix-ui/themes": "^3.2.1",
@@ -15,7 +20,12 @@
     "@tauri-apps/plugin-opener": "^2",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
-    "wavesurfer.js": "^7.10.1"
+    "wavesurfer.js": "^7.10.1",
+    "zustand": "^5.0.2",
+    "zod": "^3.22.4",
+    "date-fns": "^3.6.0",
+    "react-hotkeys-hook": "^4.6.1",
+    "react-use": "^17.6.0"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2",
@@ -23,6 +33,16 @@
     "@types/react-dom": "^19.1.6",
     "@vitejs/plugin-react": "^4.6.0",
     "typescript": "~5.8.3",
-    "vite": "^7.0.4"
+    "vite": "^7.0.4",
+    "@testing-library/react": "^16.0.1",
+    "@testing-library/jest-dom": "^6.7.0",
+    "@testing-library/user-event": "^14.8.1",
+    "@playwright/test": "^1.50.1",
+    "vitest": "^3.2.4",
+    "@vitest/ui": "^3.2.4",
+    "@vitest/coverage-v8": "^3.2.4",
+    "jsdom": "^25.0.0",
+    "@types/node": "^22.10.1",
+    "msw": "^2.6.4"
   }
 }

@@ -1,49 +1,294 @@
-import { useState } from "react";
-import reactLogo from "./assets/react.svg";
+import React, { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { AudioVisualizer } from "./components/AudioVisualizer";
+import { TranscriptionController, FinalTranscriptionResult, TranscriptionError, TranscriptionUpdateEvent } from "./components/TranscriptionController";
 import "./App.css";
 
-function App() {
-  const [greetMsg, setGreetMsg] = useState("");
-  const [name, setName] = useState("");
+interface AppState {
+  isAppReady: boolean;
+  audioLevel: number;
+  isRecording: boolean;
+  vadActivity: boolean;
+  sessionResults: FinalTranscriptionResult[];
+  errors: TranscriptionError[];
+}
 
-  async function greet() {
-    // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
-    setGreetMsg(await invoke("greet", { name }));
+function App() {
+  const [appState, setAppState] = useState<AppState>({
+    isAppReady: false,
+    audioLevel: 0,
+    isRecording: false,
+    vadActivity: false,
+    sessionResults: [],
+    errors: [],
+  });
+
+  // Initialize app and mark as ready
+  useEffect(() => {
+    const initializeApp = async () => {
+      try {
+        // Perform any necessary initialization
+        await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate initialization
+        setAppState(prev => ({ ...prev, isAppReady: true }));
+      } catch (error) {
+        console.error('Failed to initialize app:', error);
+      }
+    };
+
+    initializeApp();
+  }, []);
+
+  // Mock audio level updates for demo purposes
+  useEffect(() => {
+    if (!appState.isRecording) return;
+
+    const interval = setInterval(() => {
+      // Simulate realistic audio level fluctuations
+      const baseLevel = 0.3;
+      const variation = Math.sin(Date.now() / 1000) * 0.2 + Math.random() * 0.1;
+      const level = Math.max(0, Math.min(1, baseLevel + variation));
+      
+      setAppState(prev => ({ 
+        ...prev, 
+        audioLevel: level,
+        vadActivity: level > 0.25 // Simple VAD simulation
+      }));
+    }, 100); // Update at ~10fps for smooth animation
+
+    return () => clearInterval(interval);
+  }, [appState.isRecording]);
+
+  const handleSessionStart = (sessionId: string) => {
+    console.log('Transcription session started:', sessionId);
+    setAppState(prev => ({ 
+      ...prev, 
+      isRecording: true,
+      audioLevel: 0.2 // Start with some initial level
+    }));
+  };
+
+  const handleSessionEnd = (result: FinalTranscriptionResult) => {
+    console.log('Transcription session ended:', result);
+    setAppState(prev => ({ 
+      ...prev, 
+      isRecording: false,
+      audioLevel: 0,
+      vadActivity: false,
+      sessionResults: [...prev.sessionResults, result]
+    }));
+  };
+
+  const handleTranscriptionUpdate = (update: TranscriptionUpdateEvent) => {
+    console.log('Transcription update:', update);
+    // Handle real-time transcription updates
+  };
+
+  const handleError = (error: TranscriptionError) => {
+    console.error('Transcription error:', error);
+    setAppState(prev => ({ 
+      ...prev, 
+      errors: [...prev.errors, error],
+      isRecording: error.severity === 'critical' ? false : prev.isRecording
+    }));
+  };
+
+  const handlePlaybackToggle = (playing: boolean) => {
+    console.log('Playback toggled:', playing);
+  };
+
+  const handleSeek = (time: number) => {
+    console.log('Seek to time:', time);
+  };
+
+  if (!appState.isAppReady) {
+    return (
+      <div className="loading-container">
+        <div>Loading KagiNote...</div>
+        <div data-testid="system-check-running">Checking system requirements...</div>
+      </div>
+    );
   }
 
   return (
-    <main className="container">
-      <h1>Welcome to Tauri + React</h1>
+    <main className="container" data-testid="app-ready">
+      <header className="app-header">
+        <h1>KagiNote</h1>
+        <p>Privacy-focused meeting transcription</p>
+      </header>
 
-      <div className="row">
-        <a href="https://vite.dev" target="_blank">
-          <img src="/vite.svg" className="logo vite" alt="Vite logo" />
-        </a>
-        <a href="https://tauri.app" target="_blank">
-          <img src="/tauri.svg" className="logo tauri" alt="Tauri logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
+      <div className="app-layout">
+        {/* Audio Visualization Section */}
+        <section className="audio-section">
+          <h2>Audio Input</h2>
+          <AudioVisualizer
+            audioLevel={appState.audioLevel}
+            isRecording={appState.isRecording}
+            vadActivity={appState.vadActivity}
+            showWaveform={false} // Start with level meters, can be toggled
+            height={100}
+            width={800}
+            showPeakIndicators={true}
+            onPlaybackToggle={handlePlaybackToggle}
+            onSeek={handleSeek}
+          />
+        </section>
+
+        {/* Transcription Control Section */}
+        <section className="transcription-section">
+          <TranscriptionController
+            onSessionStart={handleSessionStart}
+            onSessionEnd={handleSessionEnd}
+            onError={handleError}
+            onTranscriptionUpdate={handleTranscriptionUpdate}
+            initialConfig={{
+              qualityTier: 'standard',
+              languages: ['en'],
+              enableSpeakerDiarization: true,
+              enableTwoPassRefinement: true,
+            }}
+          />
+        </section>
+
+        {/* Results Section */}
+        {appState.sessionResults.length > 0 && (
+          <section className="results-section">
+            <h2>Session Results</h2>
+            {appState.sessionResults.map((result, index) => (
+              <div key={result.sessionId} className="session-result">
+                <h3>Session {index + 1}</h3>
+                <div>Duration: {result.totalDuration}s</div>
+                <div>Segments: {result.segments.length}</div>
+                <div>Processing Time: {result.processingTimeMs}ms</div>
+              </div>
+            ))}
+          </section>
+        )}
+
+        {/* Error Display */}
+        {appState.errors.length > 0 && (
+          <section className="errors-section">
+            <h2>System Messages</h2>
+            {appState.errors.slice(-3).map((error, index) => (
+              <div key={index} className={`error-item ${error.severity || 'error'}`}>
+                <strong>{error.type}:</strong> {error.message}
+              </div>
+            ))}
+          </section>
+        )}
       </div>
-      <p>Click on the Tauri, Vite, and React logos to learn more.</p>
 
-      <form
-        className="row"
-        onSubmit={(e) => {
-          e.preventDefault();
-          greet();
-        }}
-      >
-        <input
-          id="greet-input"
-          onChange={(e) => setName(e.currentTarget.value)}
-          placeholder="Enter a name..."
-        />
-        <button type="submit">Greet</button>
-      </form>
-      <p>{greetMsg}</p>
+      <style jsx>{`
+        .loading-container {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          height: 100vh;
+          gap: 20px;
+        }
+
+        .app-header {
+          text-align: center;
+          margin-bottom: 30px;
+          padding: 20px;
+          border-bottom: 1px solid #e1e5e9;
+        }
+
+        .app-header h1 {
+          color: #1a1a1a;
+          margin: 0;
+          font-size: 2.5rem;
+        }
+
+        .app-header p {
+          color: #666;
+          margin: 10px 0 0 0;
+          font-size: 1.1rem;
+        }
+
+        .app-layout {
+          display: flex;
+          flex-direction: column;
+          gap: 30px;
+          max-width: 1200px;
+          margin: 0 auto;
+          padding: 0 20px;
+        }
+
+        .audio-section,
+        .transcription-section,
+        .results-section,
+        .errors-section {
+          background: white;
+          border-radius: 8px;
+          box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+          padding: 20px;
+        }
+
+        .audio-section h2,
+        .transcription-section h2,
+        .results-section h2,
+        .errors-section h2 {
+          margin: 0 0 20px 0;
+          color: #1a1a1a;
+          border-bottom: 2px solid #3b82f6;
+          padding-bottom: 8px;
+        }
+
+        .session-result {
+          padding: 15px;
+          background: #f8f9fa;
+          border-radius: 4px;
+          margin-bottom: 10px;
+        }
+
+        .session-result h3 {
+          margin: 0 0 10px 0;
+          color: #1a1a1a;
+        }
+
+        .session-result div {
+          margin: 5px 0;
+          color: #666;
+        }
+
+        .error-item {
+          padding: 10px;
+          margin: 5px 0;
+          border-radius: 4px;
+          border-left: 4px solid;
+        }
+
+        .error-item.error {
+          background: #ffebee;
+          border-color: #c62828;
+          color: #c62828;
+        }
+
+        .error-item.warning {
+          background: #fff3e0;
+          border-color: #ef6c00;
+          color: #ef6c00;
+        }
+
+        .error-item.critical {
+          background: #ffcdd2;
+          border-color: #d32f2f;
+          color: #d32f2f;
+          font-weight: bold;
+        }
+
+        @media (max-width: 768px) {
+          .app-layout {
+            padding: 0 15px;
+            gap: 20px;
+          }
+
+          .app-header h1 {
+            font-size: 2rem;
+          }
+        }
+      `}</style>
     </main>
   );
 }
