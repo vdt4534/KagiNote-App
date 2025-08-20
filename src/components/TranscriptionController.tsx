@@ -212,10 +212,33 @@ export const TranscriptionController: React.FC<TranscriptionControllerProps> = (
           const status = event.payload;
           console.error('Model error:', status);
           setError({
-            type: 'model_initialization_failed',
+            type: status.errorType || 'model_initialization_failed',
             message: status.message || 'Failed to initialize transcription model',
             timestamp: Date.now(),
-            severity: 'critical'
+            severity: 'critical',
+            recoveryOptions: status.recoveryOptions || [
+              'Check internet connectivity for model download',
+              'Ensure sufficient disk space (2GB+)',
+              'Try restarting the application',
+              'Contact support if issue persists'
+            ]
+          });
+        });
+        
+        // Fallback error for build issues
+        const unlistenBuildError = await listen<any>('build-error', (event) => {
+          const status = event.payload;
+          console.error('Build error:', status);
+          setError({
+            type: 'whisper_build_failed',
+            message: status.message || 'Whisper transcription engine failed to build',
+            timestamp: Date.now(),
+            severity: 'critical',
+            recoveryOptions: [
+              'Install cmake: brew install cmake',
+              'Install Xcode Command Line Tools: xcode-select --install',
+              'Restart terminal and try again'
+            ]
           });
         });
 
@@ -238,6 +261,7 @@ export const TranscriptionController: React.FC<TranscriptionControllerProps> = (
           unlistenModelStatus,
           unlistenModelReady,
           unlistenModelError,
+          unlistenBuildError,
           unlistenModelProgress
         ];
       } catch (err) {
@@ -551,42 +575,145 @@ export const TranscriptionController: React.FC<TranscriptionControllerProps> = (
 
     const isModelError = error.type.includes('model');
     const isAudioError = error.type.includes('audio');
-
+    const isSystemError = error.type.includes('system');
+    const isWhisperBuildError = error.message.includes('whisper-rs') || error.message.includes('cmake') || error.message.includes('build');
+    
     return (
       <div>
         <div data-testid="error-message" className="error">
-          {error.message}
+          <strong>Error:</strong> {error.message}
+          {error.timestamp && (
+            <div className="error-timestamp">
+              {new Date(error.timestamp).toLocaleTimeString()}
+            </div>
+          )}
         </div>
 
-        {isModelError && (
+        {/* Whisper Build Error - Special handling */}
+        {isWhisperBuildError && (
+          <div data-testid="whisper-build-error-dialog" className="error-dialog critical">
+            <h4>🔨 Build System Error Detected</h4>
+            <p>The Whisper transcription engine failed to compile. This is a build-time issue, not a runtime problem.</p>
+            
+            <div className="build-error-details">
+              <h5>Most likely causes:</h5>
+              <ul>
+                <li>Missing cmake build tool</li>
+                <li>Incompatible Xcode Command Line Tools</li>
+                <li>Missing Metal SDK (macOS)</li>
+                <li>Outdated clang/gcc compiler</li>
+              </ul>
+              
+              <h5>Recommended fixes:</h5>
+              <ol>
+                <li><code>brew install cmake</code></li>
+                <li><code>xcode-select --install</code></li>
+                <li>Restart your terminal/IDE</li>
+                <li>Run <code>npm run tauri dev</code> again</li>
+              </ol>
+            </div>
+            
+            <button 
+              data-testid="retry-build-button"
+              onClick={() => {
+                setError(null);
+                window.location.reload();
+              }}
+            >
+              Retry After Fixes
+            </button>
+          </div>
+        )}
+
+        {/* Model Errors */}
+        {isModelError && !isWhisperBuildError && (
           <div data-testid="model-error-dialog" className="error-dialog">
+            <h4>🤖 Model Issue</h4>
             <div>{error.message}</div>
-            <button data-testid="download-model-button">Download Model</button>
+            
+            {error.recoveryOptions && (
+              <div className="recovery-options">
+                <h5>Recovery Options:</h5>
+                {error.recoveryOptions.map((option, index) => (
+                  <div key={index} className="recovery-option">
+                    • {option}
+                  </div>
+                ))}
+              </div>
+            )}
+            
+            <button data-testid="download-model-button">Retry Model Download</button>
           </div>
         )}
 
-        {isAudioError && error.recoveryOptions && (
-          <div data-testid="error-dialog" className="error-dialog">
+        {/* Audio Errors */}
+        {isAudioError && (
+          <div data-testid="audio-error-dialog" className="error-dialog">
+            <h4>🎤 Audio System Issue</h4>
             <div>{error.message}</div>
-            {error.recoveryOptions.map(option => (
-              <button
-                key={option}
-                data-testid={`recovery-${option.replace(/\s+/g, '-').toLowerCase()}`}
-              >
-                {option.replace('_', ' ')}
-              </button>
-            ))}
+            
+            {error.recoveryOptions && (
+              <div className="recovery-options">
+                <h5>Try these solutions:</h5>
+                {error.recoveryOptions.map((option, index) => (
+                  <button
+                    key={index}
+                    data-testid={`recovery-${option.replace(/\s+/g, '-').toLowerCase()}`}
+                    className="recovery-button"
+                    onClick={() => {
+                      if (option.includes('Emergency Stop')) {
+                        handleEmergencyStop();
+                      }
+                    }}
+                  >
+                    {option.replace('_', ' ')}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
+        {/* System Errors */}
+        {isSystemError && (
+          <div data-testid="system-error-dialog" className="error-dialog">
+            <h4>💻 System Resource Issue</h4>
+            <div>{error.message}</div>
+            
+            {systemCapabilities && (
+              <div className="system-info">
+                <p><strong>System Info:</strong></p>
+                <p>CPU: {systemCapabilities.cpuCores} cores</p>
+                <p>RAM: {systemCapabilities.availableMemoryGB.toFixed(1)}GB</p>
+                <p>GPU: {systemCapabilities.hasGPU ? 'Available' : 'Not detected'}</p>
+              </div>
+            )}
+            
+            {error.recoveryOptions && (
+              <div className="recovery-options">
+                {error.recoveryOptions.map((option, index) => (
+                  <div key={index} className="recovery-option">
+                    • {option}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Critical Errors */}
         {error.severity === 'critical' && (
           <div data-testid="critical-error-dialog" className="critical-error">
+            <h4>🚨 Critical Error</h4>
             <div>{error.message}</div>
+            <button onClick={handleEmergencyStop}>Emergency Stop & Reset</button>
           </div>
         )}
 
+        {/* Performance Warnings */}
         {error.severity === 'warning' && error.type === 'thermal_throttle' && (
           <div data-testid="system-warning" className="warning">
+            <h4>🌡️ Thermal Warning</h4>
             <div>{error.message}</div>
             {error.message.includes('reducing quality') && (
               <div>Quality automatically reduced due to thermal constraints</div>
@@ -597,11 +724,23 @@ export const TranscriptionController: React.FC<TranscriptionControllerProps> = (
           </div>
         )}
 
+        {/* Processing Warnings */}
         {error.type === 'processing_queue_full' && (
           <div data-testid="processing-warning" className="warning">
+            <h4>⚠️ Processing Queue Full</h4>
             <div>{error.message}</div>
           </div>
         )}
+        
+        {/* Generic Error Actions */}
+        <div className="error-actions">
+          <button 
+            onClick={() => setError(null)} 
+            className="dismiss-error-btn"
+          >
+            Dismiss
+          </button>
+        </div>
       </div>
     );
   };
@@ -746,6 +885,13 @@ export const TranscriptionController: React.FC<TranscriptionControllerProps> = (
           background: #ffebee;
           color: #c62828;
           border: 1px solid #c62828;
+          position: relative;
+        }
+        
+        .error-timestamp {
+          font-size: 0.8em;
+          opacity: 0.7;
+          margin-top: 5px;
         }
         
         .warning {
@@ -762,21 +908,91 @@ export const TranscriptionController: React.FC<TranscriptionControllerProps> = (
         }
         
         .error-dialog {
-          padding: 15px;
-          margin: 10px 0;
-          border: 1px solid #ccc;
-          border-radius: 4px;
+          padding: 20px;
+          margin: 15px 0;
+          border: 1px solid #ddd;
+          border-radius: 8px;
           background: white;
+          box-shadow: 0 2px 8px rgba(0,0,0,0.1);
         }
         
-        .error-dialog button {
-          margin: 5px;
-          padding: 8px 16px;
+        .error-dialog.critical {
+          border-color: #d32f2f;
+          background: #fafafa;
+        }
+        
+        .error-dialog h4 {
+          margin: 0 0 10px 0;
+          font-size: 1.1em;
+        }
+        
+        .error-dialog h5 {
+          margin: 15px 0 5px 0;
+          font-size: 0.95em;
+        }
+        
+        .build-error-details ul, .build-error-details ol {
+          margin: 10px 0;
+          padding-left: 20px;
+        }
+        
+        .build-error-details code {
+          background: #f5f5f5;
+          padding: 2px 6px;
+          border-radius: 3px;
+          font-family: monospace;
+        }
+        
+        .recovery-options {
+          margin: 15px 0;
+        }
+        
+        .recovery-option {
+          margin: 5px 0;
+          padding: 8px;
+          background: #f8f9fa;
+          border-radius: 4px;
+        }
+        
+        .system-info {
+          margin: 10px 0;
+          padding: 10px;
+          background: #f8f9fa;
+          border-radius: 4px;
+          font-size: 0.9em;
+        }
+        
+        .error-dialog button, .recovery-button {
+          margin: 5px 5px 5px 0;
+          padding: 10px 16px;
           border: none;
           border-radius: 4px;
           background: #2196f3;
           color: white;
           cursor: pointer;
+          font-size: 0.9em;
+        }
+        
+        .error-dialog button:hover, .recovery-button:hover {
+          background: #1976d2;
+        }
+        
+        .error-actions {
+          margin-top: 15px;
+          text-align: right;
+        }
+        
+        .dismiss-error-btn {
+          background: #666;
+          color: white;
+          border: none;
+          padding: 8px 16px;
+          border-radius: 4px;
+          cursor: pointer;
+        }
+        
+        .dismiss-error-btn:hover {
+          background: #444;
         }
         
         .locked-message {

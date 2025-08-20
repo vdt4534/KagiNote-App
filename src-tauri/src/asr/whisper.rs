@@ -6,6 +6,7 @@
 use crate::asr::types::*;
 use crate::asr::model_manager::ModelManager;
 use crate::audio::types::AudioData;
+use crate::audio::resampler::ResamplerUtils;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -90,7 +91,7 @@ impl WhisperEngine {
         // Initialize model manager
         let mut model_manager = ModelManager::new()
             .map_err(|e| ASRError::ModelLoadFailed {
-                message: format!("Failed to initialize model manager: {}", e),
+                message: format!("Failed to initialize model manager. This may indicate permission issues with the models directory or disk space problems: {}", e),
             })?;
 
         // Download model if necessary
@@ -103,11 +104,29 @@ impl WhisperEngine {
                     info!("Model download progress: {}% ({}/{} bytes)", percent, downloaded, total);
                 }
             }))
-        ).await?;
+        ).await
+        .map_err(|e| {
+            match e {
+                ASRError::ModelLoadFailed { message } => ASRError::ModelLoadFailed {
+                    message: format!("Model loading failed for tier {:?}. Details: {}", config.model_tier, message),
+                },
+                other => other,
+            }
+        })?;
 
         // Load the actual Whisper model
         info!("Loading Whisper model from: {:?}", model_path);
-        let whisper_context = Self::load_whisper_model(&model_path, &current_device).await?;
+        let whisper_context = Self::load_whisper_model(&model_path, &current_device).await
+            .map_err(|e| {
+                ASRError::ModelLoadFailed {
+                    message: format!(
+                        "Failed to load Whisper model from path: {:?}. Device: {:?}. Error: {}. Please check that the model file is not corrupted and that you have sufficient memory.", 
+                        model_path, 
+                        current_device, 
+                        e
+                    ),
+                }
+            })?;
         
         let model_info = Self::create_model_info(&config, &model_path).await?;
         let supported_languages = Self::initialize_language_support();
@@ -428,14 +447,13 @@ impl WhisperEngine {
     
     /// Preprocess audio specifically for whisper.cpp
     async fn preprocess_audio_for_whisper(&self, audio: &AudioData) -> Result<Vec<f32>, ASRError> {
-        let mut processed = audio.samples.clone();
-        
-        // Whisper expects 16kHz mono audio
-        if audio.sample_rate != 16000 {
-            return Err(ASRError::InvalidAudioFormat {
-                message: format!("Expected 16kHz, got {}Hz", audio.sample_rate),
-            });
-        }
+        // Convert to Whisper format (16kHz, mono) using resampler
+        let whisper_audio = ResamplerUtils::to_whisper_format(audio)
+            .map_err(|e| ASRError::InvalidAudioFormat {
+                message: format!("Failed to convert audio to Whisper format: {}", e),
+            })?;
+
+        let mut processed = whisper_audio.samples;
         
         // Normalize to [-1, 1] range
         let max_amplitude = processed.iter().map(|x| x.abs()).fold(0.0f32, |a, b| a.max(b));
@@ -443,6 +461,7 @@ impl WhisperEngine {
             for sample in &mut processed {
                 *sample /= max_amplitude;
             }
+            tracing::debug!("Applied audio normalization: max amplitude {:.3}", max_amplitude);
         }
         
         // Apply pre-emphasis filter to improve speech recognition
@@ -468,6 +487,12 @@ impl WhisperEngine {
                 }
             }
         }
+
+        tracing::debug!(
+            "Preprocessed audio for Whisper: {} samples, {:.2}s duration",
+            processed.len(),
+            processed.len() as f32 / 16000.0
+        );
         
         Ok(processed)
     }

@@ -7,7 +7,8 @@ KagiNote is a **production-ready** desktop application built with Tauri v2 that 
 ## Features
 
 - **🔒 Privacy First**: 100% local processing, zero network calls during transcription
-- **🎤 Real Audio Capture**: Live microphone recording with proper start/stop controls
+- **🎤 Universal Audio Support**: Works with any microphone - automatic device compatibility
+- **🔄 Smart Resampling**: Automatic sample rate conversion (any device rate → 16kHz for Whisper)
 - **🤖 Actual AI Transcription**: Real Whisper model inference with persistent caching
 - **⚡ Instant Startup**: <1 second load time with cached models (first run: ~2 minutes)
 - **🌐 Multilingual**: Supports 100+ languages via Whisper models
@@ -50,11 +51,13 @@ npm run tauri build
 ## Architecture
 
 **Backend (Rust)**
-- **Real audio capture** with cpal streams and proper session management
+- **Universal audio capture** with automatic device compatibility and sample rate detection
+- **Real-time audio resampling** using linear interpolation (any rate → 16kHz for Whisper)
+- **Device intelligence** with built-in profiles for MacBook Pro/Air, iMac microphones
 - **Actual Whisper transcription** using whisper-rs with Metal acceleration
 - **Persistent model caching** with integrity validation and metadata tracking
 - **Session state management** with concurrent session prevention
-- **Comprehensive error handling** and automatic recovery
+- **Enhanced error diagnostics** with device-specific troubleshooting guidance
 - **Audio buffering** (1.5s minimum) for reliable transcription quality
 
 **Frontend (React 19)**

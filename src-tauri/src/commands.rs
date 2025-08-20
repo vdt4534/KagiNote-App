@@ -6,6 +6,7 @@
 use serde::{Deserialize, Serialize};
 use crate::audio::capture::{AudioCaptureService, AudioConfig};
 use crate::audio::types::{AudioData, AudioDevice, AudioSource};
+use crate::audio::device_profiles::DeviceProfileManager;
 use crate::asr::whisper::{WhisperEngine, WhisperConfig};
 use crate::asr::types::{ASRResult, TranscriptionContext};
 use uuid::Uuid;
@@ -15,6 +16,8 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use tracing;
 use sysinfo;
+use std::path::Path;
+use tokio::fs;
 
 /// Application state holding persistent services and sessions
 pub struct AppState {
@@ -24,14 +27,24 @@ pub struct AppState {
     pub whisper_engine: Arc<Mutex<Option<WhisperEngine>>>,
     /// Active transcription sessions
     pub active_sessions: Arc<Mutex<HashMap<String, TranscriptionSessionState>>>,
+    /// Device profile manager for caching optimal configurations
+    pub device_profile_manager: Arc<Mutex<DeviceProfileManager>>,
 }
 
 impl AppState {
     pub fn new() -> Self {
+        let device_profile_manager = DeviceProfileManager::new()
+            .unwrap_or_else(|e| {
+                tracing::warn!("Failed to initialize device profile manager: {}. Using fallback.", e);
+                // Create a fallback manager without cache file
+                DeviceProfileManager::new().unwrap()
+            });
+
         Self {
             audio_capture_service: Arc::new(Mutex::new(None)),
             whisper_engine: Arc::new(Mutex::new(None)),
             active_sessions: Arc::new(Mutex::new(HashMap::new())),
+            device_profile_manager: Arc::new(Mutex::new(device_profile_manager)),
         }
     }
 }
@@ -136,6 +149,27 @@ pub async fn get_audio_devices() -> Result<Vec<AudioDevice>, String> {
         .map_err(|e| format!("Failed to list audio devices: {}", e))
 }
 
+#[tauri::command]
+pub async fn get_device_troubleshooting(
+    device_name: String,
+    state: State<'_, AppState>
+) -> Result<serde_json::Value, String> {
+    let profile_manager = state.device_profile_manager.lock().await;
+    let suggestions = profile_manager.get_troubleshooting_suggestions(&device_name);
+    let stats = profile_manager.get_stats();
+
+    Ok(serde_json::json!({
+        "device_name": device_name,
+        "suggestions": suggestions,
+        "profile_stats": {
+            "total_profiles": stats.total_profiles,
+            "valid_profiles": stats.valid_profiles,
+            "built_in_profiles": stats.built_in_profiles,
+            "most_successful_device": stats.most_successful_device
+        }
+    }))
+}
+
 #[tauri::command] 
 pub async fn start_audio_capture(
     request: StartCaptureRequest,
@@ -146,6 +180,8 @@ pub async fn start_audio_capture(
         channels: request.channels,
         buffer_size_ms: request.buffer_size_ms,
         device_id: request.device_id,
+        auto_sample_rate: true,
+        target_sample_rate: 16000,
     };
     
     // Create and store capture service in app state
@@ -262,7 +298,57 @@ pub async fn start_transcription(
     let session_id = Uuid::new_v4().to_string();
     let state = app_handle.state::<AppState>();
     
-    tracing::info!("Starting transcription session: {}", session_id);
+    tracing::info!("🎙️ Starting transcription session: {} with config: {:?}", session_id, config);
+    
+    // PHASE 1: Pre-flight System Validation
+    tracing::info!("📋 Phase 1: Running system validation checks...");
+    
+    // Check system resources first
+    let sys_info = get_system_info().await.map_err(|e| {
+        let error_msg = format!("System validation failed: {}. This may indicate insufficient resources or system compatibility issues.", e);
+        tracing::error!("❌ {}", error_msg);
+        emit_detailed_error(&app_handle, &session_id, "system_validation_failed", &error_msg, vec![
+            "Check available memory (minimum 4GB recommended)".to_string(),
+            "Close other memory-intensive applications".to_string(),
+            "Restart the application and try again".to_string()
+        ]);
+        error_msg
+    })?;
+    
+    tracing::info!("✅ System validation passed: {} cores, {:.1}GB RAM, GPU: {}", 
+                 sys_info.cpu_cores, sys_info.available_memory_gb, sys_info.has_gpu);
+    
+    // Check for existing sessions with detailed state information
+    {
+        let sessions_guard = state.active_sessions.lock().await;
+        if !sessions_guard.is_empty() {
+            let existing_sessions: Vec<String> = sessions_guard.keys().cloned().collect();
+            let error_msg = format!(
+                "Another transcription session is already active: {:?}. Only one transcription session can run at a time to ensure optimal performance.",
+                existing_sessions
+            );
+            tracing::warn!("⚠️ {}", error_msg);
+            emit_detailed_error(&app_handle, &session_id, "session_already_active", &error_msg, vec![
+                "Stop the current session first".to_string(),
+                "Use Emergency Stop if the session is unresponsive".to_string()
+            ]);
+            return Err(error_msg);
+        }
+    }
+    
+    // Check audio capture state with device validation
+    {
+        let audio_capture_guard = state.audio_capture_service.lock().await;
+        if audio_capture_guard.is_some() {
+            let error_msg = "Audio capture is already active from a previous session. This may indicate improper cleanup from a previous session.".to_string();
+            tracing::warn!("⚠️ {}", error_msg);
+            emit_detailed_error(&app_handle, &session_id, "audio_capture_already_active", &error_msg, vec![
+                "Use Emergency Stop to clear all audio resources".to_string(),
+                "Restart the application if the issue persists".to_string()
+            ]);
+            return Err(error_msg);
+        }
+    }
     
     // Check if there's already an active session
     {
@@ -280,20 +366,128 @@ pub async fn start_transcription(
         }
     }
     
+    // PHASE 2: Model Availability and Validation
+    tracing::info!("🤖 Phase 2: Validating model availability...");
+    
+    let model_tier = match config.quality_tier.as_str() {
+        "high-accuracy" => crate::asr::types::ModelTier::HighAccuracy,
+        "standard" => crate::asr::types::ModelTier::Standard,
+        "turbo" => crate::asr::types::ModelTier::Turbo,
+        _ => {
+            tracing::warn!("Unknown quality tier '{}', defaulting to Standard", config.quality_tier);
+            crate::asr::types::ModelTier::Standard
+        }
+    };
+    
+    tracing::info!("🎯 Requested model tier: {:?}", model_tier);
+    
+    // Detailed model validation with comprehensive error reporting
+    {
+        use crate::asr::model_manager::ModelManager;
+        let model_manager = ModelManager::new().map_err(|e| {
+            let error_msg = format!(
+                "Failed to initialize model manager: {}. Common causes: 1) Insufficient disk permissions for ~/Library/Application Support/KagiNote/models/, 2) Disk full, 3) macOS security restrictions", 
+                e
+            );
+            tracing::error!("❌ {}", error_msg);
+            emit_detailed_error(&app_handle, &session_id, "model_manager_init_failed", &error_msg, vec![
+                "Check disk space (at least 2GB free space required)".to_string(),
+                "Verify write permissions to ~/Library/Application Support/".to_string(),
+                "Try running with administrator privileges".to_string(),
+                "Check macOS Security & Privacy settings".to_string()
+            ]);
+            error_msg
+        })?;
+        
+        // Check requested model availability
+        tracing::info!("🔍 Checking availability of {:?} model...", model_tier);
+        
+        if !model_manager.is_model_available(model_tier).await {
+            tracing::info!("⚠️ Requested model {:?} not available, checking fallback options...", model_tier);
+            
+            // Get detailed model status for diagnostics
+            let cache_status = model_manager.get_cache_status(model_tier).await;
+            tracing::info!("📊 Model cache status: {:?}", cache_status);
+            
+            // Try fallback models with detailed logging
+            let fallback_tiers = [
+                crate::asr::types::ModelTier::Standard, 
+                crate::asr::types::ModelTier::HighAccuracy, 
+                crate::asr::types::ModelTier::Turbo
+            ];
+            let mut model_available = false;
+            let mut available_models = Vec::new();
+            
+            for &fallback_tier in &fallback_tiers {
+                tracing::info!("🔄 Checking fallback model: {:?}", fallback_tier);
+                if model_manager.is_model_available(fallback_tier).await {
+                    tracing::info!("✅ Found available fallback model: {:?}", fallback_tier);
+                    available_models.push(fallback_tier);
+                    if !model_available {
+                        tracing::info!("🔄 Will use {:?} as fallback for requested {:?}", fallback_tier, model_tier);
+                        model_available = true;
+                        
+                        // Emit fallback notification
+                        let _ = app_handle.emit("model-fallback", serde_json::json!({
+                            "sessionId": session_id,
+                            "requestedTier": format!("{:?}", model_tier),
+                            "fallbackTier": format!("{:?}", fallback_tier),
+                            "message": format!("Using {} model instead of requested {}", fallback_tier.to_string(), model_tier.to_string())
+                        }));
+                    }
+                }
+            }
+            
+            if !model_available {
+                // Check if we have network connectivity for downloads
+                let models_dir = dirs::data_dir()
+                    .map(|d| d.join("KagiNote").join("models"))
+                    .unwrap_or_else(|| std::path::PathBuf::from("~/Library/Application Support/KagiNote/models"));
+                
+                let disk_space = get_available_disk_space(&models_dir).await.unwrap_or(0);
+                
+                let error_msg = format!(
+                    "No Whisper models are available for transcription. Requested: {:?}, Available models: {:?}. \
+                    Models directory: {:?}, Available disk space: {:.1}MB. \
+                    The app will attempt to download models automatically, but this requires internet connectivity and may take several minutes.",
+                    model_tier, available_models, models_dir, disk_space as f64 / (1024.0 * 1024.0)
+                );
+                
+                tracing::error!("❌ {}", error_msg);
+                
+                let recovery_options = if disk_space < 2_000_000_000 { // Less than 2GB
+                    vec![
+                        "Free up at least 2GB of disk space".to_string(),
+                        "Models will be downloaded automatically on next attempt".to_string(),
+                        "Check internet connectivity".to_string()
+                    ]
+                } else {
+                    vec![
+                        "Ensure internet connectivity for automatic model download".to_string(),
+                        "Models will be downloaded automatically (may take 5-10 minutes)".to_string(),
+                        "Try again after download completes".to_string()
+                    ]
+                };
+                
+                emit_detailed_error(&app_handle, &session_id, "no_models_available", &error_msg, recovery_options);
+                return Err(error_msg);
+            }
+        } else {
+            tracing::info!("✅ Model {:?} is available and ready", model_tier);
+        }
+    }
+    
     // Convert frontend config to backend config
     let audio_config = AudioConfig {
-        sample_rate: match config.quality_tier.as_str() {
-            "high-accuracy" => 48000,
-            "standard" => 16000,
-            "turbo" => 16000,
-            _ => 16000,
-        },
+        sample_rate: 0, // Auto-detect optimal rate
         channels: 1,
         buffer_size_ms: 100,
         device_id: None,
+        auto_sample_rate: true,
+        target_sample_rate: 16000, // Target for Whisper
     };
     
-    // Start audio capture and store in app state
+    // Start audio capture ONLY after model availability is confirmed
     let mut capture_service = AudioCaptureService::new(audio_config)
         .await
         .map_err(|e| format!("Failed to initialize audio capture: {}", e))?;
@@ -307,14 +501,9 @@ pub async fn start_transcription(
     *audio_capture_guard = Some(capture_service);
     drop(audio_capture_guard);
     
-    // Initialize ASR engine configuration
+    // Initialize ASR engine configuration (reuse model_tier from above)
     let whisper_config = WhisperConfig {
-        model_tier: match config.quality_tier.as_str() {
-            "high-accuracy" => crate::asr::types::ModelTier::HighAccuracy,
-            "standard" => crate::asr::types::ModelTier::Standard,
-            "turbo" => crate::asr::types::ModelTier::Turbo,
-            _ => crate::asr::types::ModelTier::Standard,
-        },
+        model_tier,
         model_path: None,
         device: crate::asr::types::Device::Auto,
         num_threads: 4,
@@ -394,11 +583,21 @@ pub async fn start_transcription(
                 }
             }
             Err(e) => {
-                tracing::error!("Failed to initialize Whisper engine for session {}: {}", session_id_clone, e);
+                let detailed_error = format!(
+                    "Failed to initialize Whisper engine for session {}: {}. \
+                    Common causes: 1) Model files not found or corrupted, 2) Insufficient memory, \
+                    3) Permissions issues with models directory, 4) Network issues during download. \
+                    Check logs for specific model loading errors.", 
+                    session_id_clone, e
+                );
+                tracing::error!("{}", detailed_error);
+                
                 if let Err(emit_err) = app_handle_clone.emit("model-error", serde_json::json!({
                     "sessionId": session_id_clone,
-                    "status": "error",
-                    "message": format!("Failed to initialize ASR engine: {}", e)
+                    "status": "error", 
+                    "message": detailed_error,
+                    "errorType": "model_initialization_failed",
+                    "originalError": e.to_string()
                 })) {
                     tracing::error!("Failed to emit model-error event: {}", emit_err);
                 }
@@ -407,7 +606,155 @@ pub async fn start_transcription(
     });
     
     tracing::info!("Transcription session {} started successfully", session_id);
+    tracing::info!("✅ Transcription session {} started successfully", session_id);
     Ok(session_id)
+}
+
+// Helper functions for enhanced error diagnostics
+
+/// Emit detailed error information to frontend with recovery suggestions
+fn emit_detailed_error(
+    app_handle: &tauri::AppHandle,
+    session_id: &str,
+    error_type: &str,
+    message: &str,
+    recovery_options: Vec<String>
+) {
+    let _ = app_handle.emit("transcription-error", serde_json::json!({
+        "type": error_type,
+        "message": message,
+        "sessionId": session_id,
+        "timestamp": std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis(),
+        "severity": "error",
+        "recoveryOptions": recovery_options,
+        "errorCategory": categorize_error(error_type)
+    }));
+}
+
+/// Categorize errors for better user guidance
+fn categorize_error(error_type: &str) -> &'static str {
+    match error_type {
+        e if e.contains("model") => "model",
+        e if e.contains("audio") => "audio",
+        e if e.contains("permission") => "permissions",
+        e if e.contains("system") => "system",
+        e if e.contains("network") => "network",
+        _ => "unknown"
+    }
+}
+
+/// Emit enhanced audio error with device-specific troubleshooting and resampling information
+async fn emit_enhanced_audio_error(
+    app_handle: &tauri::AppHandle,
+    session_id: &str,
+    error_type: &str,
+    message: &str,
+    device_name: Option<&str>,
+    profile_manager: Option<&DeviceProfileManager>,
+    actual_sample_rate: Option<u32>,
+    target_sample_rate: Option<u32>,
+) {
+    let mut recovery_actions = Vec::new();
+
+    // Add device-specific suggestions if available
+    if let (Some(device), Some(manager)) = (device_name, profile_manager) {
+        recovery_actions.extend(manager.get_troubleshooting_suggestions(device));
+    }
+
+    // Add sample rate specific guidance
+    if let (Some(actual), Some(target)) = (actual_sample_rate, target_sample_rate) {
+        if actual != target {
+            recovery_actions.push(format!(
+                "Audio will be resampled from {}Hz to {}Hz for Whisper compatibility", 
+                actual, target
+            ));
+            recovery_actions.push("This is normal and should not affect transcription quality".to_string());
+        } else {
+            recovery_actions.push("No resampling needed - audio format is already compatible".to_string());
+        }
+    }
+
+    // Add general audio troubleshooting
+    recovery_actions.extend(vec![
+        "Check that no other applications are using the microphone".to_string(),
+        "Verify microphone permissions in System Preferences > Security & Privacy > Privacy > Microphone".to_string(),
+        "Try restarting the application".to_string(),
+    ]);
+
+    let error_data = serde_json::json!({
+        "type": error_type,
+        "message": message,
+        "sessionId": session_id,
+        "timestamp": std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis(),
+        "severity": "error",
+        "recoveryOptions": recovery_actions,
+        "errorCategory": "audio",
+        "deviceName": device_name,
+        "audioSpecific": true,
+        "resamplingInfo": {
+            "supported": true,
+            "actualSampleRate": actual_sample_rate,
+            "targetSampleRate": target_sample_rate,
+            "needsResampling": actual_sample_rate != target_sample_rate,
+            "availableQualities": ["Fast", "Medium", "High"]
+        }
+    });
+
+    let _ = app_handle.emit("transcription-error", error_data);
+}
+
+/// Get available disk space for models directory
+async fn get_available_disk_space(path: &Path) -> Result<u64, std::io::Error> {
+    // Create directory if it doesn't exist
+    if let Some(parent) = path.parent() {
+        let _ = fs::create_dir_all(parent).await;
+    }
+    
+    // Use statvfs on Unix systems to get disk space
+    #[cfg(unix)]
+    {
+        use std::ffi::CString;
+        use std::os::raw::{c_char, c_ulong};
+        
+        #[repr(C)]
+        struct statvfs {
+            f_bsize: c_ulong,
+            f_frsize: c_ulong,
+            f_blocks: u64,
+            f_bfree: u64,
+            f_bavail: u64,
+            f_files: u64,
+            f_ffree: u64,
+            f_favail: u64,
+            f_fsid: c_ulong,
+            f_flag: c_ulong,
+            f_namemax: c_ulong,
+        }
+        
+        extern "C" {
+            fn statvfs(path: *const c_char, buf: *mut statvfs) -> i32;
+        }
+        
+        let path_str = path.to_string_lossy();
+        if let Ok(c_path) = CString::new(path_str.as_ref()) {
+            let mut stat = std::mem::MaybeUninit::<statvfs>::uninit();
+            let result = unsafe { statvfs(c_path.as_ptr(), stat.as_mut_ptr()) };
+            
+            if result == 0 {
+                let stat = unsafe { stat.assume_init() };
+                return Ok(stat.f_bavail * stat.f_frsize);
+            }
+        }
+    }
+    
+    // Fallback: return a large number if we can't determine disk space
+    Ok(10_000_000_000) // 10GB fallback
 }
 
 #[tauri::command]
@@ -548,12 +895,21 @@ pub async fn emergency_stop_all(
     Ok(format!("Emergency stop completed. Cleared {} sessions and stopped all audio capture.", session_count))
 }
 
+/// Check if Whisper dependencies are available (placeholder for future feature detection)
+fn check_whisper_availability() -> Result<(), String> {
+    // For now, assume whisper-rs is available since it's a direct dependency
+    // In the future, this could check for specific model files or runtime dependencies
+    Ok(())
+}
+
 /// Initialize Whisper engine asynchronously with progress reporting
 async fn initialize_whisper_engine_async(
     config: WhisperConfig,
     session_id: String,
     app_handle: tauri::AppHandle,
 ) -> Result<WhisperEngine, String> {
+    // Whisper should be available with whisper-rs dependency
+    tracing::info!("🤖 Whisper engine available via whisper-rs integration");
     // Emit initial progress
     if let Err(emit_err) = app_handle.emit("model-progress", serde_json::json!({
         "sessionId": session_id,
@@ -564,8 +920,8 @@ async fn initialize_whisper_engine_async(
         tracing::error!("Failed to emit model-progress event: {}", emit_err);
     }
     
-    // Initialize WhisperEngine with progress callback
-    tracing::info!("Initializing Whisper engine asynchronously for session: {}", session_id);
+    // Initialize WhisperEngine with comprehensive error handling
+    tracing::info!("🤖 Initializing Whisper engine asynchronously for session: {} with config: {:?}", session_id, config);
     
     // Emit mid-progress update
     if let Err(emit_err) = app_handle.emit("model-progress", serde_json::json!({
