@@ -190,7 +190,56 @@ export const TranscriptionController: React.FC<TranscriptionControllerProps> = (
           onError(error);
         });
 
-        unlistenRefs.current = [unlistenTranscription, unlistenStatus, unlistenError];
+        // Model status updates
+        const unlistenModelStatus = await listen<any>('model-status', (event) => {
+          const status = event.payload;
+          console.log('Model status update:', status);
+          
+          if (status.status === 'downloading') {
+            setLatestTranscription(status.message || 'Model downloading...');
+          }
+        });
+
+        // Model ready notification
+        const unlistenModelReady = await listen<any>('model-ready', (event) => {
+          const status = event.payload;
+          console.log('Model ready:', status);
+          setLatestTranscription('Model loaded! Transcription starting...');
+        });
+
+        // Model error notification
+        const unlistenModelError = await listen<any>('model-error', (event) => {
+          const status = event.payload;
+          console.error('Model error:', status);
+          setError({
+            type: 'model_initialization_failed',
+            message: status.message || 'Failed to initialize transcription model',
+            timestamp: Date.now(),
+            severity: 'critical'
+          });
+        });
+
+        // Model download progress
+        const unlistenModelProgress = await listen<any>('model-progress', (event) => {
+          const progress = event.payload;
+          console.log('Model progress:', progress);
+          
+          if (progress.status === 'downloading') {
+            setLatestTranscription(`${progress.message} (${progress.progress}%)`);
+          } else if (progress.status === 'ready') {
+            setLatestTranscription('Model ready! Listening for speech...');
+          }
+        });
+
+        unlistenRefs.current = [
+          unlistenTranscription, 
+          unlistenStatus, 
+          unlistenError, 
+          unlistenModelStatus,
+          unlistenModelReady,
+          unlistenModelError,
+          unlistenModelProgress
+        ];
       } catch (err) {
         console.error('Failed to set up event listeners:', err);
       }
@@ -279,6 +328,18 @@ export const TranscriptionController: React.FC<TranscriptionControllerProps> = (
       
       setError(error);
       onError(error);
+    }
+  };
+
+  const handleEmergencyStop = async () => {
+    try {
+      const result = await invoke<string>('emergency_stop_all');
+      console.log('Emergency stop result:', result);
+      setCurrentSession(null);
+      setLatestTranscription('');
+      setError(null);
+    } catch (err: any) {
+      console.error('Emergency stop failed:', err);
     }
   };
 
@@ -575,6 +636,14 @@ export const TranscriptionController: React.FC<TranscriptionControllerProps> = (
           onClick={handleStopRecording}
         >
           {currentSession?.status === 'stopping' ? 'Stopping...' : 'Stop Recording'}
+        </button>
+        
+        <button
+          data-testid="emergency-stop-button"
+          onClick={handleEmergencyStop}
+          style={{ backgroundColor: '#d32f2f', color: 'white' }}
+        >
+          Emergency Stop
         </button>
       </div>
 

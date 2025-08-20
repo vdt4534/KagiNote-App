@@ -9,8 +9,8 @@ use std::collections::VecDeque;
 
 /// VAD processor trait for abstraction
 pub trait VADProcessor: Send + Sync {
-    async fn detect_speech(&self, audio: &AudioData) -> Result<VADResult, VADError>;
-    async fn process_chunk(&mut self, chunk: &AudioData) -> Result<VADResult, VADError>;
+    fn detect_speech(&self, audio: &AudioData) -> impl std::future::Future<Output = Result<VADResult, VADError>> + Send;
+    fn process_chunk(&mut self, chunk: &AudioData) -> impl std::future::Future<Output = Result<VADResult, VADError>> + Send;
     fn is_initialized(&self) -> bool;
 }
 

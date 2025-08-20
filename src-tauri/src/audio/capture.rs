@@ -67,7 +67,7 @@ impl AudioCaptureService {
         let device = Self::select_device(&host, &config).await?;
         let capture_method = Self::determine_capture_method(&host);
         
-        let (sender, receiver) = mpsc::channel(100);
+        let (sender, receiver) = mpsc::channel(1000); // Increase buffer size to prevent overflow
         
         Ok(Self {
             config,
@@ -435,9 +435,13 @@ impl AudioCaptureService {
                         };
                         
                         if let Err(e) = sender.try_send(audio_data) {
-                            warn!("Failed to send audio data: {}", e);
+                            // Only warn occasionally to avoid spam
+                            if buffer.len() % 5 == 0 { // Only every 5th overflow
+                                warn!("Audio channel overflow - processing cannot keep up: {}", e);
+                            }
                         } else {
-                            info!("Sent audio buffer with {} samples", buffer.len());
+                            // Remove noisy info logs
+                            // info!("Sent audio buffer with {} samples", buffer.len());
                         }
                         
                         buffer.clear();

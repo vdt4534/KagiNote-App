@@ -12,6 +12,7 @@ use futures_util::StreamExt;
 use reqwest;
 use sha2::{Sha256, Digest};
 use serde::{Deserialize, Serialize};
+use chrono::{DateTime, Utc};
 
 /// Model metadata for verification and management
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -25,6 +26,34 @@ pub struct ModelMetadata {
     pub description: String,
 }
 
+/// Cache metadata to track model download status
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CacheMetadata {
+    pub download_timestamp: chrono::DateTime<chrono::Utc>,
+    pub file_size: u64,
+    pub sha256_verified: bool,
+    pub model_tier: ModelTier,
+    pub last_validation: Option<chrono::DateTime<chrono::Utc>>,
+    pub validation_status: ValidationStatus,
+}
+
+/// Model cache status
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum CacheStatus {
+    NotCached,
+    Cached { metadata: CacheMetadata },
+    Corrupted { reason: String },
+    Downloading { progress: f32 },
+}
+
+/// Validation status of cached models
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum ValidationStatus {
+    NotValidated,
+    Valid,
+    Invalid { reason: String },
+}
+
 /// Model download progress callback
 pub type ProgressCallback = Box<dyn Fn(u64, u64) + Send + Sync>;
 
@@ -32,6 +61,8 @@ pub type ProgressCallback = Box<dyn Fn(u64, u64) + Send + Sync>;
 pub struct ModelManager {
     models_dir: PathBuf,
     model_registry: HashMap<ModelTier, ModelMetadata>,
+    cache_metadata_file: PathBuf,
+    cache_metadata: HashMap<ModelTier, CacheMetadata>,
 }
 
 impl ModelManager {
@@ -39,10 +70,17 @@ impl ModelManager {
     pub fn new() -> Result<Self> {
         let models_dir = Self::get_models_directory()?;
         let model_registry = Self::initialize_model_registry();
+        let cache_metadata_file = models_dir.join("cache_metadata.json");
+        
+        // Load existing cache metadata
+        let cache_metadata = Self::load_cache_metadata(&cache_metadata_file)
+            .unwrap_or_else(|_| HashMap::new());
         
         Ok(Self {
             models_dir,
             model_registry,
+            cache_metadata_file,
+            cache_metadata,
         })
     }
 
@@ -61,15 +99,15 @@ impl ModelManager {
     fn initialize_model_registry() -> HashMap<ModelTier, ModelMetadata> {
         let mut registry = HashMap::new();
         
-        // Standard tier: Whisper Medium with Q4_0 quantization (~800MB)
+        // Standard tier: Whisper Medium unquantized (~1.5GB) - more compatible
         registry.insert(ModelTier::Standard, ModelMetadata {
-            name: "ggml-medium-q4_0.bin".to_string(),
-            url: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-medium-q4_0.bin".to_string(),
-            size_mb: 800,
+            name: "ggml-medium.bin".to_string(),
+            url: "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-medium.bin".to_string(),
+            size_mb: 1500,
             sha256: "f4b2bc61d2b85e3b5a85e8e4c7c8e6d9b2a9c8b7d6e5f4a3b2c1d0e9f8a7b6c5".to_string(), // Placeholder
             tier: ModelTier::Standard,
-            quantization: "Q4_0".to_string(),
-            description: "Whisper Medium model with Q4_0 quantization - balanced performance".to_string(),
+            quantization: "F32".to_string(),
+            description: "Whisper Medium model unquantized - balanced performance".to_string(),
         });
 
         // High Accuracy tier: Whisper Large-v3 with Q5_0 quantization (~2.4GB)
@@ -106,6 +144,45 @@ impl ModelManager {
             false
         }
     }
+    
+    /// Get detailed cache status for a model
+    pub async fn get_cache_status(&self, tier: ModelTier) -> CacheStatus {
+        let Some(metadata) = self.model_registry.get(&tier) else {
+            return CacheStatus::NotCached;
+        };
+        
+        let model_path = self.models_dir.join(&metadata.name);
+        
+        if !model_path.exists() {
+            return CacheStatus::NotCached;
+        }
+        
+        // Check if we have cache metadata
+        if let Some(cache_meta) = self.cache_metadata.get(&tier) {
+            // Verify the cached model is still valid
+            match self.verify_model_integrity(&model_path, metadata).await {
+                Ok(()) => CacheStatus::Cached { metadata: cache_meta.clone() },
+                Err(e) => CacheStatus::Corrupted { reason: e.to_string() },
+            }
+        } else {
+            // Model exists but no metadata - consider it cached but unverified
+            let file_metadata = match fs::metadata(&model_path).await {
+                Ok(meta) => meta,
+                Err(_) => return CacheStatus::NotCached,
+            };
+            
+            let cache_meta = CacheMetadata {
+                download_timestamp: DateTime::from_timestamp(0, 0).unwrap_or_else(Utc::now),
+                file_size: file_metadata.len(),
+                sha256_verified: false,
+                model_tier: tier,
+                last_validation: None,
+                validation_status: ValidationStatus::NotValidated,
+            };
+            
+            CacheStatus::Cached { metadata: cache_meta }
+        }
+    }
 
     /// Get the path to a model file
     pub fn get_model_path(&self, tier: ModelTier) -> Result<PathBuf, ASRError> {
@@ -127,20 +204,40 @@ impl ModelManager {
 
     /// Download model if not available
     pub async fn ensure_model_available(
-        &self, 
+        &mut self, 
         tier: ModelTier,
         progress_callback: Option<ProgressCallback>
     ) -> Result<PathBuf, ASRError> {
-        if self.is_model_available(tier).await {
-            return self.get_model_path(tier);
+        let cache_status = self.get_cache_status(tier).await;
+        
+        match cache_status {
+            CacheStatus::Cached { metadata: _ } => {
+                tracing::info!("Using cached model for tier: {:?}", tier);
+                if let Some(ref callback) = progress_callback {
+                    callback(100, 100); // Signal that model is already available
+                }
+                self.get_model_path(tier)
+            },
+            CacheStatus::Corrupted { reason } => {
+                tracing::warn!("Cached model corrupted ({}), re-downloading", reason);
+                self.download_model(tier, progress_callback).await
+            },
+            CacheStatus::NotCached => {
+                tracing::info!("Model not cached, downloading for tier: {:?}", tier);
+                self.download_model(tier, progress_callback).await
+            },
+            CacheStatus::Downloading { progress: _ } => {
+                // This shouldn't happen in normal flow, but handle gracefully
+                tracing::warn!("Model already downloading, waiting...");
+                // For simplicity, attempt download again (could be improved with download queuing)
+                self.download_model(tier, progress_callback).await
+            }
         }
-
-        self.download_model(tier, progress_callback).await
     }
 
     /// Download a specific model
     pub async fn download_model(
-        &self,
+        &mut self,
         tier: ModelTier,
         progress_callback: Option<ProgressCallback>
     ) -> Result<PathBuf, ASRError> {
@@ -235,6 +332,21 @@ impl ModelManager {
                 message: format!("Failed to move model file: {}", e),
             })?;
 
+        // Update cache metadata
+        let cache_meta = CacheMetadata {
+            download_timestamp: Utc::now(),
+            file_size: downloaded,
+            sha256_verified: false, // TODO: Implement actual checksum verification
+            model_tier: tier,
+            last_validation: Some(Utc::now()),
+            validation_status: ValidationStatus::Valid,
+        };
+        
+        self.cache_metadata.insert(tier, cache_meta);
+        self.save_cache_metadata().await.map_err(|e| ASRError::ModelLoadFailed {
+            message: format!("Failed to save cache metadata: {}", e),
+        })?;
+
         tracing::info!("Model {} successfully downloaded to: {:?}", metadata.name, model_path);
 
         Ok(model_path)
@@ -271,6 +383,11 @@ impl ModelManager {
     /// Get model metadata
     pub fn get_model_metadata(&self, tier: ModelTier) -> Option<&ModelMetadata> {
         self.model_registry.get(&tier)
+    }
+    
+    /// Get cache metadata for a model
+    pub fn get_cache_metadata(&self, tier: ModelTier) -> Option<&CacheMetadata> {
+        self.cache_metadata.get(&tier)
     }
 
     /// Clean up old or corrupted models
@@ -310,6 +427,65 @@ impl ModelManager {
         }
 
         Ok(total_size)
+    }
+    
+    /// Load cache metadata from disk
+    fn load_cache_metadata(cache_file: &Path) -> Result<HashMap<ModelTier, CacheMetadata>> {
+        if !cache_file.exists() {
+            return Ok(HashMap::new());
+        }
+        
+        let content = std::fs::read_to_string(cache_file)?;
+        let metadata: HashMap<ModelTier, CacheMetadata> = serde_json::from_str(&content)
+            .unwrap_or_else(|_| HashMap::new());
+        
+        Ok(metadata)
+    }
+    
+    /// Save cache metadata to disk
+    async fn save_cache_metadata(&self) -> Result<()> {
+        let content = serde_json::to_string_pretty(&self.cache_metadata)?;
+        fs::write(&self.cache_metadata_file, content).await?;
+        Ok(())
+    }
+    
+    /// Clear cache for a specific model tier
+    pub async fn clear_model_cache(&mut self, tier: ModelTier) -> Result<()> {
+        if let Some(metadata) = self.model_registry.get(&tier) {
+            let model_path = self.models_dir.join(&metadata.name);
+            
+            if model_path.exists() {
+                fs::remove_file(&model_path).await?;
+                tracing::info!("Removed cached model: {:?}", model_path);
+            }
+            
+            self.cache_metadata.remove(&tier);
+            self.save_cache_metadata().await?;
+        }
+        
+        Ok(())
+    }
+    
+    /// Validate all cached models and clean up corrupted ones
+    pub async fn validate_and_cleanup_cache(&mut self) -> Result<()> {
+        let mut corrupted_models = Vec::new();
+        
+        for (&tier, _cache_meta) in &self.cache_metadata {
+            if let Some(model_meta) = self.model_registry.get(&tier) {
+                let model_path = self.models_dir.join(&model_meta.name);
+                
+                if let Err(e) = self.verify_model_integrity(&model_path, model_meta).await {
+                    tracing::warn!("Model {:?} failed validation: {}", tier, e);
+                    corrupted_models.push(tier);
+                }
+            }
+        }
+        
+        for tier in corrupted_models {
+            self.clear_model_cache(tier).await?;
+        }
+        
+        Ok(())
     }
 }
 

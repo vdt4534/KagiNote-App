@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { listen, UnlistenFn } from '@tauri-apps/api/event';
 import { AudioVisualizer } from "./components/AudioVisualizer";
 import { TranscriptionController, FinalTranscriptionResult, TranscriptionError, TranscriptionUpdateEvent } from "./components/TranscriptionController";
 import "./App.css";
@@ -37,24 +38,35 @@ function App() {
     initializeApp();
   }, []);
 
-  // Mock audio level updates for demo purposes
+  // Listen for real audio level updates from backend
   useEffect(() => {
     if (!appState.isRecording) return;
 
-    const interval = setInterval(() => {
-      // Simulate realistic audio level fluctuations
-      const baseLevel = 0.3;
-      const variation = Math.sin(Date.now() / 1000) * 0.2 + Math.random() * 0.1;
-      const level = Math.max(0, Math.min(1, baseLevel + variation));
-      
-      setAppState(prev => ({ 
-        ...prev, 
-        audioLevel: level,
-        vadActivity: level > 0.25 // Simple VAD simulation
-      }));
-    }, 100); // Update at ~10fps for smooth animation
+    let unlistenAudioLevel: UnlistenFn | null = null;
 
-    return () => clearInterval(interval);
+    const setupAudioLevelListener = async () => {
+      unlistenAudioLevel = await listen<{
+        level: number;
+        vadActivity: boolean;
+        sessionId: string;
+        timestamp: number;
+      }>('audio-level', (event) => {
+        const { level, vadActivity } = event.payload;
+        setAppState(prev => ({ 
+          ...prev, 
+          audioLevel: level,
+          vadActivity
+        }));
+      });
+    };
+
+    setupAudioLevelListener();
+
+    return () => {
+      if (unlistenAudioLevel) {
+        unlistenAudioLevel();
+      }
+    };
   }, [appState.isRecording]);
 
   const handleSessionStart = (sessionId: string) => {
@@ -62,7 +74,7 @@ function App() {
     setAppState(prev => ({ 
       ...prev, 
       isRecording: true,
-      audioLevel: 0.2 // Start with some initial level
+      audioLevel: 0 // Start with no audio level, wait for real data
     }));
   };
 

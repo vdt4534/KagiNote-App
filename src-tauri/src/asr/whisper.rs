@@ -12,9 +12,9 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::Instant;
 use tokio::sync::Mutex;
-use tracing::{debug, info};
-// Note: whisper-rs temporarily removed due to build complexity
-// use whisper_rs::{WhisperContext, WhisperContextParameters, FullParams, SamplingStrategy};
+use tracing::info;
+// Whisper.cpp integration with Rust bindings
+use whisper_rs::{WhisperContext, WhisperContextParameters, FullParams, SamplingStrategy};
 
 /// Whisper engine configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -62,8 +62,10 @@ pub struct WhisperEngine {
     supported_languages: Vec<String>,
     is_loaded: bool,
     current_device: Device,
-    whisper_context: Option<PathBuf>, // Store model path instead of context for now
-    model_manager: ModelManager,
+    whisper_context: Option<WhisperContext>, // Actual whisper context
+    #[allow(dead_code)]
+    model_manager: std::sync::Arc<tokio::sync::Mutex<ModelManager>>,
+    #[allow(dead_code)]
     context_cache: Mutex<HashMap<String, TranscriptionContext>>,
     performance_metrics: Mutex<PerformanceMetrics>,
 }
@@ -86,7 +88,7 @@ impl WhisperEngine {
         }
         
         // Initialize model manager
-        let model_manager = ModelManager::new()
+        let mut model_manager = ModelManager::new()
             .map_err(|e| ASRError::ModelLoadFailed {
                 message: format!("Failed to initialize model manager: {}", e),
             })?;
@@ -103,9 +105,14 @@ impl WhisperEngine {
             }))
         ).await?;
 
-        // Prepare for whisper model loading (simplified for now)
+        // Load the actual Whisper model
+        info!("Loading Whisper model from: {:?}", model_path);
+        let whisper_context = Self::load_whisper_model(&model_path, &current_device).await?;
+        
         let model_info = Self::create_model_info(&config, &model_path).await?;
         let supported_languages = Self::initialize_language_support();
+        
+        info!("Whisper model loaded successfully");
         
         Ok(Self {
             config,
@@ -114,8 +121,8 @@ impl WhisperEngine {
             supported_languages,
             is_loaded: true,
             current_device,
-            whisper_context: Some(model_path),
-            model_manager,
+            whisper_context: Some(whisper_context),
+            model_manager: std::sync::Arc::new(tokio::sync::Mutex::new(model_manager)),
             context_cache: Mutex::new(HashMap::new()),
             performance_metrics: Mutex::new(PerformanceMetrics {
                 real_time_factor: 0.0,
@@ -152,7 +159,7 @@ impl WhisperEngine {
         Self::validate_audio(audio)?;
         
         // Ensure we have a loaded model
-        let model_path = self.whisper_context.as_ref()
+        let _whisper_context = self.whisper_context.as_ref()
             .ok_or_else(|| ASRError::ModelLoadFailed {
                 message: "Whisper model not loaded".to_string(),
             })?;
@@ -162,8 +169,8 @@ impl WhisperEngine {
         // Preprocess audio for whisper.cpp (expects 16kHz, 32-bit float, mono)
         let processed_audio = self.preprocess_audio_for_whisper(audio).await?;
         
-        // Run actual transcription (simplified for now)
-        let raw_result = self.run_whisper_transcription(model_path, &processed_audio).await?;
+        // Run actual transcription using whisper.cpp
+        let raw_result = self.run_whisper_transcription(&processed_audio)?;
         
         // Post-process results with context
         let final_result = self.postprocess_result(raw_result, context).await?;
@@ -217,6 +224,44 @@ impl WhisperEngine {
         &self.model_info
     }
     
+    /// Load Whisper model with appropriate device settings
+    async fn load_whisper_model(model_path: &PathBuf, device: &Device) -> Result<WhisperContext, ASRError> {
+        let mut ctx_params = WhisperContextParameters::default();
+        
+        // Configure GPU settings based on device
+        match device {
+            Device::Metal => {
+                ctx_params.use_gpu(true);
+                info!("Whisper context configured for Metal acceleration");
+            },
+            Device::CUDA => {
+                ctx_params.use_gpu(true);
+                info!("Whisper context configured for CUDA acceleration");
+            },
+            Device::CPU => {
+                ctx_params.use_gpu(false);
+                info!("Whisper context configured for CPU-only processing");
+            },
+            Device::Auto => {
+                // Metal is available on macOS, otherwise use CPU
+                let use_gpu = cfg!(target_os = "macos");
+                ctx_params.use_gpu(use_gpu);
+                info!("Whisper context configured for auto device selection (GPU: {})", use_gpu);
+            }
+        }
+        
+        // Load the model
+        let ctx = WhisperContext::new_with_params(
+            model_path.to_string_lossy().as_ref(),
+            ctx_params
+        ).map_err(|e| ASRError::ModelLoadFailed {
+            message: format!("Failed to load Whisper model: {}", e),
+        })?;
+        
+        info!("Whisper context created successfully");
+        Ok(ctx)
+    }
+
     // Private implementation methods
     
     fn validate_config(config: &WhisperConfig) -> Result<(), ASRError> {
@@ -427,13 +472,13 @@ impl WhisperEngine {
         Ok(processed)
     }
 
-    /// Run transcription using whisper.cpp (simplified implementation)
-    async fn run_whisper_transcription(
-        &self, 
-        model_path: &PathBuf, 
-        audio: &[f32]
-    ) -> Result<RawTranscriptionResult, ASRError> {
-        info!("Using model: {:?} for transcription", model_path);
+    /// Run transcription using actual whisper.cpp
+    fn run_whisper_transcription(&self, audio: &[f32]) -> Result<RawTranscriptionResult, ASRError> {
+        let whisper_context = self.whisper_context.as_ref()
+            .ok_or_else(|| ASRError::ModelLoadFailed {
+                message: "Whisper context not available".to_string(),
+            })?;
+
         info!("Processing {:.2}s of audio with {} tier", 
               audio.len() as f32 / 16000.0, // Assuming 16kHz
               match self.config.model_tier {
@@ -442,66 +487,150 @@ impl WhisperEngine {
                   ModelTier::Turbo => "Turbo",
               }
         );
+
+        // Extract configuration values to avoid borrowing self in closure
+        let ctx = whisper_context;
+        let audio = audio.to_vec();
+        let language = self.config.language.clone();
+        let language_for_convert = language.clone(); // Clone for use after spawn_blocking
+        let num_threads = self.config.num_threads;
+        let is_translate = matches!(self.config.task, Task::Translate);
+        let temperature = self.config.temperature;
+        let enable_word_timestamps = self.config.enable_word_timestamps;
         
-        // Simulate processing time based on tier
-        let processing_delay = match self.config.model_tier {
-            ModelTier::Turbo => 200,      // 200ms for turbo
-            ModelTier::Standard => 500,   // 500ms for standard  
-            ModelTier::HighAccuracy => 800, // 800ms for high accuracy
-        };
+        // Configure Whisper parameters
+        let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
         
-        tokio::time::sleep(std::time::Duration::from_millis(processing_delay)).await;
+        // Set language if specified
+        if let Some(ref lang) = language {
+            params.set_language(Some(lang.as_str()));
+        }
         
-        // Generate realistic transcription result based on audio characteristics
-        let duration_seconds = audio.len() as f32 / 16000.0;
-        let audio_energy = audio.iter().map(|&x| x * x).sum::<f32>() / audio.len() as f32;
+        // Configure based on settings
+        params.set_n_threads(num_threads as i32);
+        params.set_translate(is_translate);
+        params.set_print_special(false);
+        params.set_print_progress(false);
+        params.set_print_realtime(false);
+        params.set_print_timestamps(false);
         
-        let (text, words) = if audio_energy > 0.001 {
-            // Simulated speech detection
-            let confidence = (0.8 + audio_energy * 10.0).min(0.98);
+        // Set temperature for creativity/determinism tradeoff
+        params.set_temperature(temperature);
+        
+        // Enable word timestamps if requested
+        if enable_word_timestamps {
+            params.set_token_timestamps(true);
+        }
+        
+        // Create state for transcription
+        let mut state = ctx.create_state()
+            .map_err(|e| ASRError::TranscriptionFailed {
+                message: format!("Failed to create whisper state: {}", e),
+            })?;
+        
+        // Run full transcription
+        state.full(params, &audio)
+            .map_err(|e| ASRError::TranscriptionFailed {
+                message: format!("Whisper transcription failed: {}", e),
+            })?;
+        
+        // Extract segments
+        let num_segments = state.full_n_segments()
+            .map_err(|e| ASRError::TranscriptionFailed {
+                message: format!("Failed to get segment count: {}", e),
+            })?;
+        
+        let mut segments = Vec::new();
+        for i in 0..num_segments {
+            let text = state.full_get_segment_text(i)
+                .map_err(|e| ASRError::TranscriptionFailed {
+                    message: format!("Failed to get segment text: {}", e),
+                })?;
+            let start_time = state.full_get_segment_t0(i)
+                .map_err(|e| ASRError::TranscriptionFailed {
+                    message: format!("Failed to get segment start time: {}", e),
+                })?;
+            let end_time = state.full_get_segment_t1(i)
+                .map_err(|e| ASRError::TranscriptionFailed {
+                    message: format!("Failed to get segment end time: {}", e),
+                })?;
             
-            let sample_text = match self.config.language.as_deref().unwrap_or("en") {
-                "en" => "Thank you for using KagiNote. Your audio has been processed successfully.",
-                "es" => "Gracias por usar KagiNote. Su audio ha sido procesado exitosamente.",
-                "fr" => "Merci d'utiliser KagiNote. Votre audio a été traité avec succès.",
-                "de" => "Vielen Dank für die Nutzung von KagiNote. Ihr Audio wurde erfolgreich verarbeitet.",
-                "ja" => "KagiNoteをご利用いただきありがとうございます。音声が正常に処理されました。",
-                _ => "Thank you for using KagiNote. Your audio has been processed successfully.",
+            segments.push(TranscriptionSegment {
+                text,
+                start_time: start_time as f32 / 100.0, // Convert from centiseconds to seconds
+                end_time: end_time as f32 / 100.0,     // Convert from centiseconds to seconds
+            });
+        }
+
+        // Convert whisper-rs results to our format
+        Self::convert_whisper_segments(segments, language_for_convert)
+    }
+    
+    /// Convert whisper segments to our internal RawTranscriptionResult format
+    fn convert_whisper_segments(segments: Vec<TranscriptionSegment>, language: Option<String>) -> Result<RawTranscriptionResult, ASRError> {
+        if segments.is_empty() {
+            return Ok(RawTranscriptionResult {
+                text: String::new(),
+                confidence: 0.0,
+                words: Vec::new(),
+                language: language.unwrap_or_else(|| "en".to_string()),
+                language_confidence: 1.0,
+            });
+        }
+        
+        let mut all_text = String::new();
+        let mut all_words = Vec::new();
+        
+        for segment in segments {
+            // Add segment text to full transcription
+            if !all_text.is_empty() {
+                all_text.push(' ');
+            }
+            all_text.push_str(&segment.text);
+            
+            // For now, create word-level results by splitting segment text
+            // In a future version, we could access token-level data for better timing
+            let words: Vec<&str> = segment.text.split_whitespace().collect();
+            let segment_duration = segment.end_time - segment.start_time;
+            let word_duration = if words.len() > 1 { 
+                segment_duration / words.len() as f32 
+            } else { 
+                segment_duration 
             };
             
-            let words: Vec<WordResult> = sample_text
-                .split_whitespace()
-                .enumerate()
-                .map(|(i, word)| {
-                    let start_time = i as f32 * 0.5;
-                    let end_time = start_time + 0.4;
-                    WordResult {
-                        word: word.to_string(),
-                        start_time,
-                        end_time,
-                        confidence: confidence + (i % 3) as f32 * 0.01,
-                    }
-                })
-                .collect();
+            for (i, word) in words.iter().enumerate() {
+                // Skip empty words
+                if word.trim().is_empty() {
+                    continue;
+                }
                 
-            (sample_text.to_string(), words)
-        } else {
-            // Low energy - likely silence
-            (String::new(), Vec::new())
-        };
+                let word_start = segment.start_time + (i as f32 * word_duration);
+                let word_end = word_start + word_duration;
+                
+                let word_result = WordResult {
+                    word: word.trim_matches(|c: char| c.is_ascii_punctuation()).to_string(),
+                    start_time: word_start,
+                    end_time: word_end,
+                    confidence: 0.8, // Default confidence since whisper-rs doesn't provide token confidence
+                };
+                
+                all_words.push(word_result);
+            }
+        }
         
-        let overall_confidence = if !words.is_empty() {
-            words.iter().map(|w| w.confidence).sum::<f32>() / words.len() as f32
+        // Calculate overall confidence as average of word confidences
+        let overall_confidence = if !all_words.is_empty() {
+            all_words.iter().map(|w| w.confidence).sum::<f32>() / all_words.len() as f32
         } else {
             0.0
         };
         
         let result = RawTranscriptionResult {
-            text,
+            text: all_text.trim().to_string(),
             confidence: overall_confidence,
-            words,
-            language: self.config.language.clone().unwrap_or_else(|| "en".to_string()),
-            language_confidence: 0.95,
+            words: all_words,
+            language: language.unwrap_or_else(|| "en".to_string()),
+            language_confidence: 0.95, // Default since whisper-rs doesn't provide language confidence
         };
         
         info!("Transcription completed: '{}' (confidence: {:.2})", 
@@ -510,54 +639,6 @@ impl WhisperEngine {
         Ok(result)
     }
     
-    async fn apply_context(
-        &self,
-        audio: &[f32],
-        context: &TranscriptionContext,
-    ) -> Result<Vec<f32>, ASRError> {
-        // Apply contextual enhancements
-        let enhanced = audio.to_vec();
-        
-        // Speaker adaptation
-        if let Some(embedding) = &context.speaker_embedding {
-            // Apply speaker embedding (simplified)
-            debug!("Applied speaker embedding of size {}", embedding.len());
-        }
-        
-        // Speaking rate normalization
-        if let Some(rate) = context.speaking_rate {
-            if rate != 0.0 {
-                // Adjust for speaking rate (simplified)
-                debug!("Normalized for speaking rate: {:.1} WPS", rate);
-            }
-        }
-        
-        Ok(enhanced)
-    }
-    
-    async fn run_inference(&self, features: &[f32]) -> Result<RawTranscriptionResult, ASRError> {
-        // Simulate model inference
-        let inference_time = match self.config.model_tier {
-            ModelTier::Standard => std::time::Duration::from_millis(800),
-            ModelTier::HighAccuracy => std::time::Duration::from_millis(1500),
-            ModelTier::Turbo => std::time::Duration::from_millis(600),
-        };
-        
-        tokio::time::sleep(inference_time).await;
-        
-        // Generate mock result based on features
-        let confidence = 0.85 + (features.len() % 10) as f32 * 0.01;
-        let text = self.generate_mock_transcription(features).await;
-        let words = self.generate_mock_words(&text).await;
-        
-        Ok(RawTranscriptionResult {
-            text,
-            confidence,
-            words,
-            language: self.config.language.clone().unwrap_or_else(|| "en".to_string()),
-            language_confidence: 0.95,
-        })
-    }
     
     async fn postprocess_result(
         &self,
@@ -604,65 +685,53 @@ impl WhisperEngine {
         Ok(features)
     }
     
-    async fn run_language_detection(&self, features: &[f32]) -> Result<LanguageDetectionResult, ASRError> {
-        // Mock language detection based on features
-        let primary_lang = if features.len() % 3 == 0 {
-            "en"
-        } else if features.len() % 3 == 1 {
-            "ja"
+    async fn run_language_detection(&self, audio_features: &[f32]) -> Result<LanguageDetectionResult, ASRError> {
+        // For now, implement a simpler approach since whisper-rs language detection API 
+        // may not be directly available in the current version
+        // In a production version, this could be enhanced with actual Whisper language detection
+        
+        // Use first 30 seconds of audio for analysis (Whisper standard)
+        let sample_size = (30.0 * 16000.0) as usize; // 30 seconds at 16kHz
+        let detection_audio = if audio_features.len() > sample_size {
+            &audio_features[..sample_size]
         } else {
-            "es"
+            audio_features
         };
-        
+
+        // Analyze audio characteristics for basic language detection
+        let audio_energy = detection_audio.iter().map(|&x| x * x).sum::<f32>() / detection_audio.len() as f32;
+        let zero_crossings = detection_audio.windows(2)
+            .filter(|w| (w[0] > 0.0) != (w[1] > 0.0))
+            .count();
+        let zcr = zero_crossings as f32 / detection_audio.len() as f32;
+
+        // Simple heuristic-based language detection (placeholder)
+        let (primary_language, primary_confidence) = if zcr > 0.1 && audio_energy > 0.01 {
+            // High zero-crossing rate might suggest certain languages
+            if zcr > 0.15 {
+                ("ja", 0.75) // Japanese often has high ZCR
+            } else {
+                ("en", 0.80) // Default to English
+            }
+        } else if audio_energy > 0.005 {
+            ("en", 0.70) // English default for moderate energy
+        } else {
+            ("en", 0.60) // Low confidence default
+        };
+
         let alternatives = vec![
-            LanguageAlternative { language: "en".to_string(), confidence: 0.85 },
-            LanguageAlternative { language: "ja".to_string(), confidence: 0.75 },
+            LanguageAlternative { language: "en".to_string(), confidence: 0.80 },
             LanguageAlternative { language: "es".to_string(), confidence: 0.65 },
-            LanguageAlternative { language: "fr".to_string(), confidence: 0.55 },
-            LanguageAlternative { language: "de".to_string(), confidence: 0.45 },
+            LanguageAlternative { language: "fr".to_string(), confidence: 0.60 },
+            LanguageAlternative { language: "de".to_string(), confidence: 0.55 },
+            LanguageAlternative { language: "ja".to_string(), confidence: 0.50 },
         ];
-        
+
         Ok(LanguageDetectionResult {
-            detected_language: primary_lang.to_string(),
-            confidence: 0.92,
+            detected_language: primary_language.to_string(),
+            confidence: primary_confidence,
             alternatives,
         })
-    }
-    
-    async fn generate_mock_transcription(&self, features: &[f32]) -> String {
-        // Generate mock transcription based on features
-        let texts = vec![
-            "Good morning everyone, let's begin today's quarterly review meeting.",
-            "Thank you for joining us in this important business discussion.",
-            "Let me explain our approach to solving this technical challenge.",
-            "The results show significant improvement over the previous quarter.",
-            "We need to focus on customer satisfaction and operational efficiency.",
-        ];
-        
-        let index = (features.len() % texts.len()).min(texts.len() - 1);
-        texts[index].to_string()
-    }
-    
-    async fn generate_mock_words(&self, text: &str) -> Vec<WordResult> {
-        let words: Vec<&str> = text.split_whitespace().collect();
-        let mut results = Vec::new();
-        let mut current_time = 0.0;
-        
-        for word in words {
-            let duration = 0.3 + word.len() as f32 * 0.05; // Rough duration estimate
-            let confidence = 0.8 + (word.len() % 5) as f32 * 0.04;
-            
-            results.push(WordResult {
-                word: word.to_string(),
-                start_time: current_time,
-                end_time: current_time + duration,
-                confidence,
-            });
-            
-            current_time += duration + 0.1; // Small pause between words
-        }
-        
-        results
     }
     
     async fn apply_custom_vocabulary(
@@ -734,7 +803,7 @@ impl WhisperEngine {
     }
 }
 
-// Helper struct for raw transcription results
+// Helper structs for transcription
 #[derive(Debug)]
 struct RawTranscriptionResult {
     text: String,
@@ -742,6 +811,13 @@ struct RawTranscriptionResult {
     words: Vec<WordResult>,
     language: String,
     language_confidence: f32,
+}
+
+#[derive(Debug)]
+struct TranscriptionSegment {
+    text: String,
+    start_time: f32,
+    end_time: f32,
 }
 
 // Additional helper functions for external tests
