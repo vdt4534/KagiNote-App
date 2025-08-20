@@ -6,9 +6,9 @@
 use crate::audio::types::{AudioData, AudioDevice, AudioError, AudioSource};
 use anyhow::Result;
 use cpal::{Device, Host, Stream, StreamConfig};
-use cpal::traits::{DeviceTrait, HostTrait};
+use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use serde::{Deserialize, Serialize};
-// Removed unused imports
+use std::sync::{Arc, Mutex};
 use std::time::SystemTime;
 use tokio::sync::mpsc;
 use tracing::{error, info, warn};
@@ -51,7 +51,7 @@ unsafe impl Sync for AudioCaptureService {}
 pub struct AudioCaptureService {
     config: AudioConfig,
     device: Option<Device>,
-    stream: Option<()>, // Placeholder for stream (cpal Stream is not Send)
+    stream_handle: Option<Arc<Mutex<Stream>>>, // Wrap Stream in Arc<Mutex<>> to make it Send
     audio_sender: Option<mpsc::Sender<AudioData>>,
     audio_receiver: Option<mpsc::Receiver<AudioData>>,
     is_capturing: bool,
@@ -72,7 +72,7 @@ impl AudioCaptureService {
         Ok(Self {
             config,
             device: Some(device),
-            stream: None,
+            stream_handle: None,
             audio_sender: Some(sender),
             audio_receiver: Some(receiver),
             is_capturing: false,
@@ -154,11 +154,16 @@ impl AudioCaptureService {
         let stream_config = Self::create_stream_config(&self.config)?;
         let sender = self.audio_sender.as_ref().unwrap().clone();
         
-        // In a real implementation, we would create and start the stream here
-        // For now, we simulate successful stream creation
-        let _stream = Self::create_input_stream(device, &stream_config, sender).await?;
+        // Create the actual input stream
+        let stream = Self::create_input_stream(device, &stream_config, sender).await?;
         
-        self.stream = Some(());
+        // Start the stream
+        stream.play().map_err(|e| AudioError::InitializationFailed { 
+            source: Box::new(e) 
+        })?;
+        
+        // Store the stream wrapped in Arc<Mutex<>>
+        self.stream_handle = Some(Arc::new(Mutex::new(stream)));
         self.is_capturing = true;
         
         info!("Audio capture started successfully");
@@ -171,8 +176,14 @@ impl AudioCaptureService {
             return Ok(());
         }
         
-        if let Some(_stream) = self.stream.take() {
-            // Stream cleanup would happen here
+        if let Some(stream_handle) = self.stream_handle.take() {
+            // Pause the stream before dropping it
+            if let Ok(stream) = stream_handle.lock() {
+                if let Err(e) = stream.pause() {
+                    warn!("Failed to pause audio stream: {}", e);
+                }
+            }
+            // Stream will be dropped when stream_handle goes out of scope
         }
         
         self.is_capturing = false;
@@ -208,8 +219,13 @@ impl AudioCaptureService {
     
     /// Simulate device disconnection for testing
     pub async fn simulate_device_disconnection(&mut self) {
-        if let Some(_stream) = self.stream.take() {
-            // Stream cleanup would happen here
+        if let Some(stream_handle) = self.stream_handle.take() {
+            // Pause the stream before dropping it
+            if let Ok(stream) = stream_handle.lock() {
+                if let Err(e) = stream.pause() {
+                    warn!("Failed to pause audio stream during disconnection: {}", e);
+                }
+            }
         }
         self.device = None;
         self.is_capturing = false;
@@ -376,20 +392,56 @@ impl AudioCaptureService {
         let sample_rate = config.sample_rate.0;
         let channels = config.channels as u8;
         
+        // Create audio buffer to accumulate samples before sending
+        let buffer_size = (sample_rate / 10) as usize; // 100ms buffer
+        let audio_buffer = Arc::new(Mutex::new(Vec::<f32>::with_capacity(buffer_size)));
+        let buffer_clone = audio_buffer.clone();
+        
+        // Try to determine the supported sample format and build the appropriate stream
+        let supported_configs = device.supported_input_configs()
+            .map_err(|e| AudioError::InitializationFailed { 
+                source: Box::new(e) 
+            })?;
+            
+        // Check if f32 format is supported
+        let mut supports_f32 = false;
+        for supported_config in supported_configs {
+            if supported_config.sample_format() == cpal::SampleFormat::F32 {
+                supports_f32 = true;
+                break;
+            }
+        }
+        
+        if !supports_f32 {
+            warn!("Device does not support f32 format, attempting with current config anyway");
+        }
+        
         let stream = device.build_input_stream(
             config,
             move |data: &[f32], _: &cpal::InputCallbackInfo| {
-                let audio_data = AudioData {
-                    samples: data.to_vec(),
-                    sample_rate,
-                    channels,
-                    timestamp: SystemTime::now(),
-                    source_channel: AudioSource::Microphone,
-                    duration_seconds: data.len() as f32 / sample_rate as f32,
-                };
-                
-                if let Err(e) = sender.try_send(audio_data) {
-                    warn!("Failed to send audio data: {}", e);
+                // Accumulate audio data in buffer
+                if let Ok(mut buffer) = buffer_clone.lock() {
+                    buffer.extend_from_slice(data);
+                    
+                    // Send buffered audio when we have enough samples
+                    if buffer.len() >= buffer_size {
+                        let audio_data = AudioData {
+                            samples: buffer.clone(),
+                            sample_rate,
+                            channels,
+                            timestamp: SystemTime::now(),
+                            source_channel: AudioSource::Microphone,
+                            duration_seconds: buffer.len() as f32 / (sample_rate * channels as u32) as f32,
+                        };
+                        
+                        if let Err(e) = sender.try_send(audio_data) {
+                            warn!("Failed to send audio data: {}", e);
+                        } else {
+                            info!("Sent audio buffer with {} samples", buffer.len());
+                        }
+                        
+                        buffer.clear();
+                    }
                 }
             },
             move |err| {
