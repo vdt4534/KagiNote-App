@@ -10,13 +10,21 @@ export interface TranscriptSegment {
   startTime: number;
   endTime: number;
   speaker: string;
+  speakerId?: string; // Support new speaker ID format
   text: string;
   confidence: number;
   isEditing?: boolean;
 }
 
+export interface SpeakerInfo {
+  id: string;
+  displayName: string;
+  color?: string;
+}
+
 export interface TranscriptViewProps {
   segments: TranscriptSegment[];
+  speakers?: Map<string, SpeakerInfo>;
   currentTime?: number;
   onSeek?: (time: number) => void;
   onEditSegment?: (segmentId: string, newText: string) => void;
@@ -26,11 +34,13 @@ export interface TranscriptViewProps {
   isLive?: boolean;
   searchQuery?: string;
   onSearch?: (query: string) => void;
+  onSpeakerRename?: (speakerId: string, newName: string) => void;
   className?: string;
 }
 
 export const TranscriptView: React.FC<TranscriptViewProps> = ({
   segments,
+  speakers = new Map(),
   currentTime = 0,
   onSeek,
   onEditSegment,
@@ -40,6 +50,7 @@ export const TranscriptView: React.FC<TranscriptViewProps> = ({
   isLive = false,
   searchQuery = '',
   onSearch,
+  onSpeakerRename,
   className = '',
 }) => {
   const [editingSegmentId, setEditingSegmentId] = useState<string | null>(null);
@@ -107,22 +118,35 @@ export const TranscriptView: React.FC<TranscriptViewProps> = ({
     );
   };
 
-  const getSpeakerColor = (speaker: string): string => {
-    // Generate consistent colors for speakers
-    const hash = speaker.split('').reduce((a, b) => {
+  const getSpeakerColor = (segment: TranscriptSegment): string => {
+    const speakerId = segment.speakerId || segment.speaker;
+    const speakerInfo = speakers.get(speakerId);
+    
+    if (speakerInfo?.color) {
+      return speakerInfo.color;
+    }
+    
+    // Fallback to hash-based color generation
+    const hash = speakerId.split('').reduce((a, b) => {
       a = ((a << 5) - a) + b.charCodeAt(0);
       return a & a;
     }, 0);
     
     const colors = [
-      'text-primary-600 dark:text-primary-400',
-      'text-secondary-600 dark:text-secondary-400', 
-      'text-purple-600 dark:text-purple-400',
-      'text-orange-600 dark:text-orange-400',
-      'text-teal-600 dark:text-teal-400',
+      '#3B82F6', // Blue
+      '#10B981', // Green  
+      '#8B5CF6', // Purple
+      '#F97316', // Orange
+      '#06B6D4', // Teal
     ];
     
     return colors[Math.abs(hash) % colors.length];
+  };
+
+  const getSpeakerDisplayName = (segment: TranscriptSegment): string => {
+    const speakerId = segment.speakerId || segment.speaker;
+    const speakerInfo = speakers.get(speakerId);
+    return speakerInfo?.displayName || segment.speaker;
   };
 
   const isCurrentSegment = (segment: TranscriptSegment): boolean => {
@@ -172,14 +196,19 @@ export const TranscriptView: React.FC<TranscriptViewProps> = ({
             <div
               key={segment.id}
               data-segment-id={segment.id}
+              data-testid={`transcript-segment-${segment.speakerId || segment.speaker}`}
+              data-speaker-id={segment.speakerId || segment.speaker}
               className={cn(
-                'group p-4 rounded-lg border transition-all duration-200',
+                'group p-4 rounded-lg border-l-4 border-r border-y transition-all duration-200',
                 'max-h-[120px] overflow-hidden flex flex-col',
                 isCurrentSegment(segment) 
-                  ? 'border-primary-300 bg-primary-50 dark:border-primary-700 dark:bg-primary-900/20'
-                  : 'border-neutral-200 hover:border-neutral-300 dark:border-neutral-700 dark:hover:border-neutral-600',
+                  ? 'border-r-primary-300 border-y-primary-300 bg-primary-50 dark:border-r-primary-700 dark:border-y-primary-700 dark:bg-primary-900/20'
+                  : 'border-r-neutral-200 border-y-neutral-200 hover:border-r-neutral-300 hover:border-y-neutral-300 dark:border-r-neutral-700 dark:border-y-neutral-700 dark:hover:border-r-neutral-600 dark:hover:border-y-neutral-600',
                 'hover:shadow-sm'
               )}
+              style={{ 
+                borderLeftColor: getSpeakerColor(segment)
+              }}
             >
               {/* Segment Header */}
               <div className="flex items-center justify-between mb-2 flex-shrink-0">
@@ -187,9 +216,13 @@ export const TranscriptView: React.FC<TranscriptViewProps> = ({
                   {showSpeakers && (
                     <Badge 
                       variant="neutral" 
-                      className={cn('font-medium', getSpeakerColor(segment.speaker))}
+                      className="font-medium text-white"
+                      style={{ 
+                        backgroundColor: getSpeakerColor(segment),
+                        borderColor: getSpeakerColor(segment)
+                      }}
                     >
-                      {segment.speaker}
+                      {getSpeakerDisplayName(segment)}
                     </Badge>
                   )}
                   

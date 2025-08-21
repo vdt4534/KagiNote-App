@@ -6,6 +6,12 @@ import { TranscriptView, TranscriptSegment } from '@/components/features/Transcr
 import { ControlBar } from '@/components/features/ControlBar';
 import { MeetingDetailsPanel } from '@/components/features/MeetingDetailsPanel';
 
+export interface SpeakerInfo {
+  id: string;
+  displayName: string;
+  color?: string;
+}
+
 export interface RecordingScreenProps {
   meetingTitle?: string;
   isRecording: boolean;
@@ -14,6 +20,8 @@ export interface RecordingScreenProps {
   audioLevel: number;
   vadActivity: boolean;
   transcriptSegments: TranscriptSegment[];
+  speakers?: Map<string, SpeakerInfo>;
+  currentSpeaker?: string;
   currentModel?: string;
   language?: string;
   participants?: string[];
@@ -23,6 +31,7 @@ export interface RecordingScreenProps {
   onStop: () => void;
   onOpenSettings?: () => void;
   onEditSegment?: (segmentId: string, newText: string) => void;
+  onSpeakerRename?: (speakerId: string, newName: string) => void;
   systemInfo?: {
     cpu: number;
     memory: number;
@@ -39,6 +48,8 @@ export const RecordingScreen: React.FC<RecordingScreenProps> = ({
   audioLevel,
   vadActivity,
   transcriptSegments,
+  speakers = new Map(),
+  currentSpeaker,
   currentModel = 'Standard',
   language = 'English',
   participants = [],
@@ -48,6 +59,7 @@ export const RecordingScreen: React.FC<RecordingScreenProps> = ({
   onStop,
   onOpenSettings,
   onEditSegment,
+  onSpeakerRename,
   systemInfo = { cpu: 15, memory: 2.1, rtf: 0.8 },
   className = '',
 }) => {
@@ -76,29 +88,61 @@ export const RecordingScreen: React.FC<RecordingScreenProps> = ({
         <Card className="h-full flex flex-col">
           <CardHeader className="flex-shrink-0 pb-2 sm:pb-3">
             <div className="flex items-center justify-between">
-              <h2 className="text-lg sm:text-xl font-semibold text-neutral-900 dark:text-neutral-100">
-                Live Transcript
-              </h2>
+              <div className="flex items-center gap-3">
+                <h2 className="text-lg sm:text-xl font-semibold text-neutral-900 dark:text-neutral-100">
+                  Live Transcript
+                </h2>
+                
+                {/* Speaker Count */}
+                {speakers.size > 0 && (
+                  <div className="flex items-center gap-1 px-2 py-1 rounded-full bg-neutral-100 dark:bg-neutral-800">
+                    <Icon name="users" size="sm" className="text-neutral-600 dark:text-neutral-400" />
+                    <span className="text-sm font-medium text-neutral-600 dark:text-neutral-400">
+                      {speakers.size}
+                    </span>
+                  </div>
+                )}
+              </div>
               
-              {isRecording && (
-                <div className="flex items-center gap-2">
-                  <div className="w-2 h-2 bg-secondary-500 rounded-full animate-pulse" />
-                  <span className="text-sm text-neutral-500 dark:text-neutral-400">
-                    Real-time
-                  </span>
-                </div>
-              )}
+              <div className="flex items-center gap-3">
+                {/* Current Speaker Indicator */}
+                {isRecording && currentSpeaker && speakers.get(currentSpeaker) && (
+                  <div className="flex items-center gap-2">
+                    <div 
+                      className="w-3 h-3 rounded-full"
+                      style={{ 
+                        backgroundColor: speakers.get(currentSpeaker)?.color || '#6B7280'
+                      }}
+                    />
+                    <span className="text-sm font-medium text-neutral-700 dark:text-neutral-300">
+                      {speakers.get(currentSpeaker)?.displayName}
+                    </span>
+                  </div>
+                )}
+                
+                {/* Recording Indicator */}
+                {isRecording && (
+                  <div className="flex items-center gap-2">
+                    <div className="w-2 h-2 bg-secondary-500 rounded-full animate-pulse" />
+                    <span className="text-sm text-neutral-500 dark:text-neutral-400">
+                      Real-time
+                    </span>
+                  </div>
+                )}
+              </div>
             </div>
           </CardHeader>
           
           <CardBody className="flex-1 min-h-0 p-0">
             <TranscriptView
               segments={transcriptSegments}
+              speakers={speakers}
               showTimestamps={true}
               showSpeakers={true}
               showConfidence={false}
               isLive={isRecording}
               onEditSegment={onEditSegment}
+              onSpeakerRename={onSpeakerRename}
               className="h-full"
             />
           </CardBody>

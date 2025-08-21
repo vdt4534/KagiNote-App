@@ -5,7 +5,7 @@ import { AppLayout } from "./components/layout/AppLayout";
 import { Dashboard } from "./screens/Dashboard";
 import { NewMeetingModal, MeetingConfig } from "./screens/NewMeetingModal";
 import { RecordingScreen } from "./screens/RecordingScreen";
-import { TranscriptSegment } from "./components/features/TranscriptView";
+import { TranscriptSegment, SpeakerInfo } from "./components/features/TranscriptView";
 import { TranscriptionController, FinalTranscriptionResult, TranscriptionError, TranscriptionUpdateEvent, TranscriptionConfig, TranscriptionControllerRef } from "./components/features/TranscriptionController";
 import { MeetingFile } from "./screens/Dashboard";
 import './styles/globals.css';
@@ -22,6 +22,8 @@ interface AppState {
   recordingDuration: number;
   currentMeeting: MeetingConfig | null;
   transcriptSegments: TranscriptSegment[];
+  speakers: Map<string, SpeakerInfo>;
+  currentSpeaker?: string;
   sessionResults: FinalTranscriptionResult[];
   errors: TranscriptionError[];
   showNewMeetingModal: boolean;
@@ -41,6 +43,8 @@ function App() {
     recordingDuration: 0,
     currentMeeting: null,
     transcriptSegments: [],
+    speakers: new Map(),
+    currentSpeaker: undefined,
     sessionResults: [],
     errors: [],
     showNewMeetingModal: false,
@@ -139,6 +143,69 @@ function App() {
     };
   }, [appState.isRecording]);
 
+  // Listen for speaker diarization events from backend
+  useEffect(() => {
+    if (!appState.isRecording) return;
+
+    let unlistenSpeakerUpdate: UnlistenFn | null = null;
+
+    const setupSpeakerListener = async () => {
+      unlistenSpeakerUpdate = await listen<{
+        speakerId: string;
+        displayName: string;
+        confidence: number;
+        voiceCharacteristics?: {
+          pitch: number;
+          formantF1: number;
+          formantF2: number;
+          speakingRate: number;
+        };
+        isActive: boolean;
+        sessionId: string;
+        timestamp: number;
+      }>('speaker-update', (event) => {
+        const { speakerId, displayName, confidence, voiceCharacteristics, isActive } = event.payload;
+        
+        setAppState(prev => {
+          const newSpeakers = new Map(prev.speakers);
+          
+          if (isActive) {
+            // Generate a consistent color for this speaker if they don't have one
+            const existingSpeaker = newSpeakers.get(speakerId);
+            const colors = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#06B6D4', '#F97316', '#84CC16', '#EC4899', '#6366F1'];
+            const speakerColor = existingSpeaker?.color || colors[newSpeakers.size % colors.length];
+            
+            newSpeakers.set(speakerId, {
+              id: speakerId,
+              displayName: displayName || `Speaker ${newSpeakers.size + 1}`,
+              color: speakerColor,
+            });
+            
+            return {
+              ...prev,
+              speakers: newSpeakers,
+              currentSpeaker: speakerId,
+            };
+          } else {
+            // Speaker stopped speaking but keep them in the map
+            return {
+              ...prev,
+              currentSpeaker: prev.currentSpeaker === speakerId ? undefined : prev.currentSpeaker,
+            };
+          }
+        });
+      });
+    };
+
+    setupSpeakerListener();
+
+    return () => {
+      if (unlistenSpeakerUpdate) {
+        unlistenSpeakerUpdate();
+      }
+    };
+  }, [appState.isRecording]);
+
   // Meeting Management Functions
   const saveMeetingToStorage = (meeting: MeetingFile, type: 'imported' | 'recorded') => {
     try {
@@ -212,6 +279,8 @@ function App() {
       isPaused: false,
       recordingDuration: 0,
       transcriptSegments: [],
+      speakers: new Map(), // Reset speakers for new recording
+      currentSpeaker: undefined,
       audioLevel: 0,
     }));
 
@@ -266,6 +335,25 @@ function App() {
         segment.id === segmentId ? { ...segment, text: newText } : segment
       )
     }));
+  };
+
+  const handleSpeakerRename = (speakerId: string, newName: string) => {
+    setAppState(prev => {
+      const newSpeakers = new Map(prev.speakers);
+      const existingSpeaker = newSpeakers.get(speakerId);
+      
+      if (existingSpeaker) {
+        newSpeakers.set(speakerId, {
+          ...existingSpeaker,
+          displayName: newName,
+        });
+      }
+      
+      return {
+        ...prev,
+        speakers: newSpeakers,
+      };
+    });
   };
 
   const handleImportFile = async () => {
@@ -399,11 +487,14 @@ function App() {
   const handleTranscriptionUpdate = (update: TranscriptionUpdateEvent) => {
     console.log('Transcription update:', update);
     // Convert update to transcript segment and add to live transcript
+    const speakerId = (update.segment as any)?.speakerId || update.segment?.speaker || 'speaker_1';
+    
     const newSegment: TranscriptSegment = {
       id: `${update.sessionId}-${Date.now()}-${Math.random()}`,
       startTime: update.segment?.startTime || 0,
       endTime: update.segment?.endTime || 0,
       speaker: update.segment?.speaker || 'Speaker 1',
+      speakerId: speakerId,
       text: update.segment?.text || '',
       confidence: update.segment?.confidence || 0.95
     };
@@ -480,6 +571,8 @@ function App() {
             audioLevel={appState.audioLevel}
             vadActivity={appState.vadActivity}
             transcriptSegments={appState.transcriptSegments}
+            speakers={appState.speakers}
+            currentSpeaker={appState.currentSpeaker}
             currentModel={appState.currentMeeting?.modelId}
             language={appState.currentMeeting?.language}
             onStart={() => {/* handled by controls */}}
@@ -487,6 +580,7 @@ function App() {
             onResume={handleResumeRecording}
             onStop={handleStopRecording}
             onEditSegment={handleEditSegment}
+            onSpeakerRename={handleSpeakerRename}
           />
         );
       default:
