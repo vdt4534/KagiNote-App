@@ -189,70 +189,62 @@ export const AudioVisualizer: React.FC<AudioVisualizerProps> = ({
   const renderLevelMeters = () => {
     if (showWaveform) return null;
 
+    // Ultra-compact horizontal meter design
     return (
       <div 
         data-testid="level-meters"
-        className="level-meters"
+        className="level-meters relative flex items-center w-full"
         style={{ 
-          width: width, 
-          height: height,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          backgroundColor: '#1a1a1a',
-          borderRadius: '4px',
-          position: 'relative'
+          height: Math.min(height, 32)
         }}
       >
-        <div className="level-meter-container" style={{ width: '80%', height: '60%' }}>
-          <div
-            data-testid="audio-level-meter"
-            data-level={clampedLevel}
-            className={`level-meter ${isClipping ? 'clipping-warning' : ''}`}
-            style={{
-              width: '100%',
-              height: '100%',
-              backgroundColor: '#333',
-              borderRadius: '4px',
-              overflow: 'hidden',
-              position: 'relative'
-            }}
-          >
+        <div className="flex items-center gap-2 w-full">
+          {/* Level meter bar */}
+          <div className="relative flex-1">
             <div
-              data-testid="level-bar"
-              className="level-bar"
-              style={{
-                width: `${clampedLevel * 100}%`,
-                height: '100%',
-                backgroundColor: isClipping ? '#ef4444' : '#10b981',
-                transition: 'width 0.1s ease-out',
-                borderRadius: '4px'
-              }}
-            />
-          </div>
-        </div>
-        
-        {showPeakIndicators && (
-          <div data-testid="peak-indicators" className="peak-indicators">
-            {peakHistory.slice(-10).map((peak, index) => (
+              data-testid="audio-level-meter"
+              data-level={clampedLevel}
+              className={cn(
+                "relative w-full h-5 bg-neutral-200 dark:bg-neutral-800 rounded-full overflow-hidden",
+                isClipping && "ring-1 ring-error-500"
+              )}
+            >
               <div
-                key={peak.timestamp}
-                data-testid={`peak-bar-${index}`}
-                className="peak-bar"
+                data-testid="level-bar"
+                className={cn(
+                  "absolute left-0 top-0 h-full transition-all duration-75 ease-out rounded-full",
+                  isClipping 
+                    ? "bg-error-500" 
+                    : vadActivity 
+                      ? "bg-secondary-500"
+                      : "bg-neutral-400"
+                )}
                 style={{
-                  position: 'absolute',
-                  right: `${index * 4}px`,
-                  top: '50%',
-                  transform: 'translateY(-50%)',
-                  width: '2px',
-                  height: `${peak.level * 60}%`,
-                  backgroundColor: '#6366f1',
-                  opacity: Math.max(0.2, 1 - (index * 0.1))
+                  width: `${clampedLevel * 100}%`
                 }}
               />
-            ))}
+              {/* Subtle grid markers */}
+              {[25, 50, 75].map((percent) => (
+                <div 
+                  key={percent}
+                  className="absolute h-full w-px bg-neutral-300 dark:bg-neutral-700 opacity-20"
+                  style={{ left: `${percent}%` }}
+                />
+              ))}
+            </div>
           </div>
-        )}
+          
+          {/* Voice indicator and percentage */}
+          <div className="flex items-center gap-2">
+            <div className={cn(
+              "w-1.5 h-1.5 rounded-full transition-colors",
+              vadActivity ? "bg-secondary-500" : "bg-neutral-300 dark:bg-neutral-600"
+            )} />
+            <span className="text-xs font-mono text-neutral-500 dark:text-neutral-400 min-w-[3ch]">
+              {Math.round(clampedLevel * 100)}%
+            </span>
+          </div>
+        </div>
       </div>
     );
   };
@@ -264,19 +256,13 @@ export const AudioVisualizer: React.FC<AudioVisualizerProps> = ({
       return (
         <div
           data-testid="waveform-error-fallback"
-          className="waveform-error"
+          className="flex items-center justify-center bg-neutral-50 dark:bg-neutral-900 text-neutral-500 dark:text-neutral-400 rounded-lg"
           style={{
             width: width,
-            height: height,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            backgroundColor: '#1a1a1a',
-            color: '#666',
-            borderRadius: '4px'
+            height: Math.min(height, 60)
           }}
         >
-          <span>Waveform unavailable</span>
+          <span className="text-sm">Waveform unavailable</span>
         </div>
       );
     }
@@ -343,18 +329,12 @@ export const AudioVisualizer: React.FC<AudioVisualizerProps> = ({
     return (
       <div
         data-testid="no-audio-state"
+        className="flex items-center justify-center text-neutral-500 dark:text-neutral-400 w-full"
         style={{
-          width: width,
-          height: height,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          backgroundColor: '#1a1a1a',
-          color: '#666',
-          borderRadius: '4px'
+          height: Math.min(height, 32)
         }}
       >
-        <span>No audio data available</span>
+        <span className="text-xs">No audio data available</span>
       </div>
     );
   };
@@ -365,84 +345,19 @@ export const AudioVisualizer: React.FC<AudioVisualizerProps> = ({
       data-width={width}
       data-height={height}
       className={cn("audio-visualizer", className)}
-      style={{ position: 'relative' }}
     >
-      {/* Recording Indicator */}
-      <div
-        data-testid="recording-indicator"
-        className={`recording-indicator ${isRecording ? 'recording-active' : ''}`}
-        aria-label={isRecording ? 'Recording active' : 'Recording inactive'}
-        style={{
-          position: 'absolute',
-          top: '8px',
-          left: '8px',
-          width: '12px',
-          height: '12px',
-          borderRadius: '50%',
-          backgroundColor: isRecording ? '#ef4444' : '#6b7280',
-          zIndex: 10,
-          animation: isRecording ? 'pulse 1s infinite' : 'none'
-        }}
-      />
-
-      {/* VAD Activity Indicator */}
-      <div
-        data-testid="vad-indicator"
-        className={`vad-indicator ${vadActivity ? 'vad-active' : ''}`}
-        aria-label={vadActivity ? 'Speech detected' : 'No speech detected'}
-        style={{
-          position: 'absolute',
-          top: '8px',
-          right: '8px',
-          width: '12px',
-          height: '12px',
-          borderRadius: '50%',
-          backgroundColor: vadActivity ? '#10b981' : '#6b7280',
-          zIndex: 10
-        }}
-      />
-
-      {/* Audio Level Label */}
+      {/* Audio Level Label for screen readers */}
       <div
         aria-label={`Audio level ${Math.round(clampedLevel * 100)}%`}
-        style={{ position: 'absolute', left: '-9999px' }}
+        className="sr-only"
       >
         Audio level: {Math.round(clampedLevel * 100)}%
       </div>
 
-      {/* Clipping Warning */}
-      {showClippingWarning && (
-        <>
-          <div
-            data-testid="clipping-indicator"
-            aria-label="Audio clipping detected"
-            style={{
-              position: 'absolute',
-              top: '8px',
-              left: '50%',
-              transform: 'translateX(-50%)',
-              padding: '4px 8px',
-              backgroundColor: '#ef4444',
-              color: 'white',
-              borderRadius: '4px',
-              fontSize: '12px',
-              zIndex: 10
-            }}
-          >
-            CLIPPING
-          </div>
-          <div role="alert" style={{ position: 'absolute', left: '-9999px' }}>
-            Clipping detected - audio level too high
-          </div>
-        </>
-      )}
-
       {/* Main Visualization Area */}
-      <div style={{ marginTop: '32px' }}>
-        {renderNoAudioState()}
-        {renderLevelMeters()}
-        {renderWaveform()}
-      </div>
+      {renderNoAudioState()}
+      {renderLevelMeters()}
+      {renderWaveform()}
 
       {/* CSS Animation for recording pulse */}
       <style>{`

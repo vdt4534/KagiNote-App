@@ -163,37 +163,28 @@ export const RecordingScreen: React.FC<RecordingScreenProps> = ({
       <div className="flex-1 grid grid-cols-1 lg:grid-cols-2 gap-6 min-h-0">
         {/* Left Column - Audio Controls */}
         <div className="flex flex-col space-y-6">
-          {/* Audio Visualization */}
-          <Card>
-            <CardHeader>
-              <h3 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100">
-                Audio Levels
-              </h3>
-            </CardHeader>
-            <CardBody>
-              <AudioVisualizer
-                audioLevel={audioLevel}
-                isRecording={isRecording}
-                vadActivity={vadActivity}
-                showWaveform={false}
-                height={120}
-                className="mb-4"
-              />
-              
-              <div className="flex items-center justify-between text-sm">
+          {/* Audio Visualization - Compact Design */}
+          <Card className="overflow-hidden">
+            <CardBody className="p-3">
+              <div className="flex items-center gap-3">
                 <div className="flex items-center gap-2">
-                  <div className={cn(
-                    'w-3 h-3 rounded-full',
-                    vadActivity ? 'bg-secondary-500 animate-pulse' : 'bg-neutral-400'
-                  )} />
-                  <span className="text-neutral-600 dark:text-neutral-400">
-                    {vadActivity ? 'Voice Activity Detected' : 'No Voice Activity'}
+                  {isRecording && (
+                    <div className="w-2 h-2 bg-error-500 rounded-full animate-pulse" />
+                  )}
+                  <span className="text-sm font-medium text-neutral-600 dark:text-neutral-400 whitespace-nowrap">
+                    Audio
                   </span>
                 </div>
-                
-                <span className="text-neutral-500 dark:text-neutral-400 font-mono">
-                  Level: {Math.round(audioLevel * 100)}%
-                </span>
+                <div className="flex-1">
+                  <AudioVisualizer
+                    audioLevel={audioLevel}
+                    isRecording={isRecording}
+                    vadActivity={vadActivity}
+                    showWaveform={false}
+                    height={32}
+                    className="w-full"
+                  />
+                </div>
               </div>
             </CardBody>
           </Card>
