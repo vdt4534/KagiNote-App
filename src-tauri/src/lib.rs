@@ -5,6 +5,9 @@
 
 pub mod audio;
 pub mod asr;
+pub mod diarization;
+pub mod models;
+pub mod storage;
 
 use tauri::Manager;
 
@@ -28,7 +31,33 @@ pub fn run() {
             commands::stop_transcription,
             commands::get_active_sessions,
             commands::cleanup_session,
-            commands::emergency_stop_all
+            commands::emergency_stop_all,
+            // Speaker profile management commands
+            commands::initialize_speaker_storage,
+            commands::create_speaker_profile,
+            commands::get_speaker_profile,
+            commands::list_speaker_profiles,
+            commands::update_speaker_profile,
+            commands::delete_speaker_profile,
+            commands::add_voice_embedding,
+            commands::get_voice_embeddings,
+            commands::find_similar_speakers,
+            commands::fast_similarity_search,
+            commands::get_embedding_index_stats,
+            commands::rebuild_embedding_index,
+            commands::export_speaker_profiles,
+            commands::import_speaker_profiles,
+            // Seed data management commands
+            commands::load_test_seed_data,
+            commands::create_comprehensive_test_dataset,
+            commands::clear_all_speaker_data,
+            // Diarization integration commands
+            commands::initialize_diarization_service,
+            commands::diarize_audio_segment,
+            commands::identify_speaker,
+            commands::get_diarization_stats,
+            commands::update_speaker_in_session,
+            commands::merge_speaker_profiles
         ])
         .setup(|app| {
             // Initialize logging
@@ -42,6 +71,12 @@ pub fn run() {
                 // Initialize audio and ASR systems
                 if let Err(e) = initialize_systems().await {
                     tracing::error!("Failed to initialize systems: {}", e);
+                }
+                
+                // Initialize speaker storage on startup
+                let state = app_handle.state::<commands::AppState>();
+                if let Err(e) = state.initialize_speaker_storage().await {
+                    tracing::warn!("Failed to initialize speaker storage on startup: {}", e);
                 }
             });
             
@@ -62,6 +97,11 @@ async fn initialize_systems() -> anyhow::Result<()> {
     // Validate audio system
     if let Err(e) = audio::capture::AudioCaptureService::validate_system() {
         tracing::warn!("Audio system validation failed: {}", e);
+    }
+    
+    // Initialize diarization module
+    if let Err(e) = diarization::initialize().await {
+        tracing::warn!("Diarization system initialization failed: {}", e);
     }
     
     // Pre-load models if available

@@ -163,17 +163,18 @@ function App() {
         isActive: boolean;
         sessionId: string;
         timestamp: number;
+        color?: string;
       }>('speaker-update', (event) => {
-        const { speakerId, displayName, confidence, voiceCharacteristics, isActive } = event.payload;
+        const { speakerId, displayName, confidence, voiceCharacteristics, isActive, color } = event.payload;
         
         setAppState(prev => {
           const newSpeakers = new Map(prev.speakers);
           
           if (isActive) {
-            // Generate a consistent color for this speaker if they don't have one
+            // Use the color from the backend or generate one if not provided
             const existingSpeaker = newSpeakers.get(speakerId);
             const colors = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#06B6D4', '#F97316', '#84CC16', '#EC4899', '#6366F1'];
-            const speakerColor = existingSpeaker?.color || colors[newSpeakers.size % colors.length];
+            const speakerColor = color || existingSpeaker?.color || colors[newSpeakers.size % colors.length];
             
             newSpeakers.set(speakerId, {
               id: speakerId,
@@ -202,6 +203,53 @@ function App() {
     return () => {
       if (unlistenSpeakerUpdate) {
         unlistenSpeakerUpdate();
+      }
+    };
+  }, [appState.isRecording]);
+
+  // Listen for diarization warnings and handle graceful degradation
+  useEffect(() => {
+    if (!appState.isRecording) return;
+
+    let unlistenWarning: UnlistenFn | null = null;
+
+    const setupWarningListener = async () => {
+      unlistenWarning = await listen<{
+        sessionId: string;
+        type: string;
+        message: string;
+        recoverable: boolean;
+        timestamp: number;
+      }>('diarization-warning', (event) => {
+        const { type, message, recoverable } = event.payload;
+        
+        console.warn(`Diarization warning [${type}]: ${message}`);
+        
+        // Show user-friendly notification about graceful degradation
+        if (recoverable) {
+          // Could show a toast notification here
+          console.info('Continuing with single speaker mode - all transcription will work normally');
+        }
+        
+        // Log warning in app state for debugging
+        setAppState(prev => ({
+          ...prev,
+          errors: [...prev.errors, {
+            type: 'warning',
+            message: `Speaker identification: ${message}`,
+            timestamp: event.payload.timestamp,
+            severity: 'warning' as const,
+            recoverable
+          }]
+        }));
+      });
+    };
+
+    setupWarningListener();
+
+    return () => {
+      if (unlistenWarning) {
+        unlistenWarning();
       }
     };
   }, [appState.isRecording]);
@@ -337,7 +385,28 @@ function App() {
     }));
   };
 
-  const handleSpeakerRename = (speakerId: string, newName: string) => {
+  const handleSpeakerRename = async (speakerId: string, newName: string) => {
+    // Update backend if there's an active session
+    if (appState.isRecording) {
+      try {
+        const sessions = await invoke('get_active_sessions') as any[];
+        const currentSession = sessions.find(s => s.status === 'active');
+        
+        if (currentSession) {
+          const existingSpeaker = appState.speakers.get(speakerId);
+          await invoke('update_speaker_in_session', {
+            sessionId: currentSession.sessionId,
+            speakerId: speakerId,
+            displayName: newName,
+            color: existingSpeaker?.color || '#3B82F6'
+          });
+        }
+      } catch (error) {
+        console.error('Failed to update speaker in backend:', error);
+      }
+    }
+    
+    // Update local state
     setAppState(prev => {
       const newSpeakers = new Map(prev.speakers);
       const existingSpeaker = newSpeakers.get(speakerId);

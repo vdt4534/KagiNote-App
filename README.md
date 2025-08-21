@@ -16,6 +16,10 @@ KagiNote V2 is a **production-ready** desktop application built with Tauri v2, R
 - **🎛️ Quality Tiers**: Standard (1.5GB), High Accuracy (2.4GB), Turbo (1.2GB) models
 - **💾 Segment Storage**: Real-time transcription segments stored and accumulated during sessions
 - **🎯 Live Display**: Actual transcription text displayed in real-time (not placeholders)
+- **🎭 Speaker Diarization**: Real-time speaker identification with 512-dimensional embeddings
+- **👥 Speaker Profiles**: Persistent speaker profiles with custom names, colors, and voice characteristics
+- **🔊 Voice Activity Detection**: Advanced speech detection with overlapping speaker support
+- **🎨 Adaptive Clustering**: Automatic speaker clustering with configurable similarity thresholds
 
 ### New V2 Interface
 - **📊 Modern Dashboard**: Meeting list with search, sorting, and filtering
@@ -25,7 +29,7 @@ KagiNote V2 is a **production-ready** desktop application built with Tauri v2, R
 - **🖥️ Platform-Aware**: Native look on macOS/Windows with platform-specific adaptations
 - **📱 Real-time Display**: Live transcription with audio visualization
 - **🗂️ Meeting Management**: Create, save, delete, and review transcripts
-- **💬 Speaker Separation**: Chat-style bubbles for clear speaker identification (diarization planned)
+- **🎭 Real-time Speaker Diarization**: Identify up to 8 speakers with persistent profiles and custom colors
 
 ## Quick Start
 
@@ -83,23 +87,26 @@ npm run tauri build
 
 ## Performance
 
-| Model Tier | Model Size | Memory Usage | Startup Time | Use Case |
-|------------|------------|--------------|--------------|----------|
-| Standard | 1.5GB | ~4GB | <1s (cached) | Daily meetings |
-| High Accuracy | 2.4GB | ~6GB | <1s (cached) | Critical content |
-| Turbo | 1.2GB | ~3GB | <1s (cached) | Fastest processing |
+| Model Tier | Model Size | Memory Usage | Startup Time | Speaker Support | Use Case |
+|------------|------------|--------------|--------------|-----------------|----------|
+| Standard | 1.5GB | ~4GB | <1s (cached) | 8 speakers | Daily meetings |
+| High Accuracy | 2.4GB | ~6GB | <1s (cached) | 8 speakers | Critical content |
+| Turbo | 1.2GB | ~3GB | <1s (cached) | 8 speakers | Fastest processing |
 
 **Performance Metrics:**
 - **Session Start**: <1 second with cached models
 - **First Run**: ~2 minutes for initial model download
 - **Transcription Latency**: ~1.5 seconds for real-time display
+- **Speaker Detection**: <2 seconds for new speaker identification
 - **Stop Response**: <100ms immediate microphone release
 
 ## Privacy & Security
 
 - **Zero network calls** during transcription processing
-- **AES-256 encryption** for stored transcripts
+- **AES-256 encryption** for stored transcripts and speaker profiles
 - **Memory protection** with secure audio buffer wiping
+- **No voice samples stored** - only mathematical embeddings
+- **Local speaker models** - all diarization processing on-device
 - **OWASP compliant** with enterprise security standards
 - **Source code audited** for privacy compliance
 

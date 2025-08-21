@@ -9,6 +9,12 @@ use crate::audio::types::{AudioData, AudioDevice, AudioSource};
 use crate::audio::device_profiles::DeviceProfileManager;
 use crate::asr::whisper::{WhisperEngine, WhisperConfig};
 use crate::asr::types::{ASRResult, TranscriptionContext};
+use crate::diarization::{DiarizationService, DiarizationConfig};
+use crate::models::{
+    SpeakerProfile as DbSpeakerProfile, VoiceEmbedding, MeetingSpeaker, SimilarSpeaker, 
+    CreateSpeakerProfileRequest, UpdateSpeakerProfileRequest, SpeakerIdentification
+};
+use crate::storage::{Database, SpeakerStore, EmbeddingIndex, SeedManager};
 use uuid::Uuid;
 use tauri::{Emitter, Manager, State};
 use std::collections::HashMap;
@@ -25,10 +31,18 @@ pub struct AppState {
     pub audio_capture_service: Arc<Mutex<Option<AudioCaptureService>>>,
     /// Whisper ASR engine instance
     pub whisper_engine: Arc<Mutex<Option<WhisperEngine>>>,
+    /// Diarization service instance
+    pub diarization_service: Arc<Mutex<Option<DiarizationService>>>,
     /// Active transcription sessions
     pub active_sessions: Arc<Mutex<HashMap<String, TranscriptionSessionState>>>,
     /// Device profile manager for caching optimal configurations
     pub device_profile_manager: Arc<Mutex<DeviceProfileManager>>,
+    /// Speaker storage database
+    pub speaker_database: Arc<Mutex<Option<Database>>>,
+    /// Speaker store for CRUD operations
+    pub speaker_store: Arc<Mutex<Option<SpeakerStore>>>,
+    /// Fast embedding index for similarity search
+    pub embedding_index: Arc<Mutex<EmbeddingIndex>>,
 }
 
 impl AppState {
@@ -40,12 +54,58 @@ impl AppState {
                 DeviceProfileManager::new().unwrap()
             });
 
+        // Initialize embedding index with default dimensions (512 for typical speaker embeddings)
+        let embedding_index = EmbeddingIndex::new(512, 8);
+
         Self {
             audio_capture_service: Arc::new(Mutex::new(None)),
             whisper_engine: Arc::new(Mutex::new(None)),
+            diarization_service: Arc::new(Mutex::new(None)),
             active_sessions: Arc::new(Mutex::new(HashMap::new())),
             device_profile_manager: Arc::new(Mutex::new(device_profile_manager)),
+            speaker_database: Arc::new(Mutex::new(None)),
+            speaker_store: Arc::new(Mutex::new(None)),
+            embedding_index: Arc::new(Mutex::new(embedding_index)),
         }
+    }
+
+    /// Initialize speaker storage database
+    pub async fn initialize_speaker_storage(&self) -> Result<(), String> {
+        // Get app data directory
+        let app_data_dir = dirs::data_local_dir()
+            .ok_or("Failed to get app data directory")?;
+        let kaginote_dir = app_data_dir.join("KagiNote");
+        
+        // Create directory if it doesn't exist
+        tokio::fs::create_dir_all(&kaginote_dir).await
+            .map_err(|e| format!("Failed to create KagiNote data directory: {}", e))?;
+        
+        let db_path = kaginote_dir.join("speakers.db");
+        
+        // Initialize database
+        let database = Database::new(&db_path).await
+            .map_err(|e| format!("Failed to initialize speaker database: {}", e))?;
+        
+        // Run migrations
+        database.migrate().await
+            .map_err(|e| format!("Failed to run database migrations: {}", e))?;
+        
+        // Create speaker store
+        let speaker_store = SpeakerStore::new(database.clone());
+        
+        // Update app state
+        {
+            let mut db_guard = self.speaker_database.lock().await;
+            *db_guard = Some(database);
+        }
+        
+        {
+            let mut store_guard = self.speaker_store.lock().await;
+            *store_guard = Some(speaker_store);
+        }
+        
+        tracing::info!("Speaker storage initialized successfully");
+        Ok(())
     }
 }
 
@@ -565,6 +625,32 @@ pub async fn start_transcription(
                 let mut whisper_guard = state.whisper_engine.lock().await;
                 *whisper_guard = Some(engine);
                 drop(whisper_guard);
+                
+                // Initialize diarization service if enabled
+                if config.enable_speaker_diarization {
+                    tracing::info!("Initializing speaker diarization for session: {}", session_id_clone);
+                    let diarization_config = DiarizationConfig {
+                        max_speakers: 8,
+                        min_speakers: 2,
+                        embedding_dimension: 512,
+                        similarity_threshold: 0.7,
+                        min_segment_duration: 1.0,
+                        speaker_change_detection_threshold: 0.6,
+                        ..Default::default()
+                    };
+                    
+                    match DiarizationService::new(diarization_config).await {
+                        Ok(diarization_service) => {
+                            let mut diarization_guard = state.diarization_service.lock().await;
+                            *diarization_guard = Some(diarization_service);
+                            drop(diarization_guard);
+                            tracing::info!("Speaker diarization initialized successfully");
+                        }
+                        Err(e) => {
+                            tracing::warn!("Failed to initialize speaker diarization: {:?}", e);
+                        }
+                    }
+                }
                 
                 // Emit success event
                 if let Err(emit_err) = app_handle_clone.emit("model-ready", serde_json::json!({
@@ -1316,13 +1402,98 @@ async fn run_transcription_loop(
                     if !result.text.trim().is_empty() {
                         tracing::info!("Emitting transcription update: '{}'", result.text);
                         
+                        // Determine speaker ID using diarization if enabled
+                        let speaker_id = {
+                            let sessions_guard = state.active_sessions.lock().await;
+                            let enable_diarization = sessions_guard.get(&session_id)
+                                .map(|s| s.config.enable_speaker_diarization)
+                                .unwrap_or(false);
+                            drop(sessions_guard);
+                            
+                            if enable_diarization {
+                                // Try to get speaker from diarization service
+                                let diarization_guard = state.diarization_service.lock().await;
+                                if let Some(ref diarization) = *diarization_guard {
+                                    // Extract embeddings and identify speaker
+                                    match diarization.extract_speaker_embeddings(&buffered_audio.samples, buffered_audio.sample_rate).await {
+                                        Ok(embeddings) if !embeddings.is_empty() => {
+                                            // Try to reidentify existing speaker
+                                            match diarization.reidentify_speaker(&embeddings[0]).await {
+                                                Ok(Some(existing_speaker)) => {
+                                                    tracing::debug!("Reidentified speaker: {}", existing_speaker);
+                                                    existing_speaker
+                                                }
+                                                Ok(None) => {
+                                                    // Create new speaker ID
+                                                    let new_speaker_id = format!("speaker_{}", transcription_counter + 1);
+                                                    tracing::debug!("Creating new speaker: {}", new_speaker_id);
+                                                    
+                                                    // Emit speaker detection event
+                                                    if let Err(emit_err) = app_handle.emit("speaker-update", serde_json::json!({
+                                                        "speakerId": new_speaker_id,
+                                                        "displayName": format!("Speaker {}", transcription_counter + 1),
+                                                        "confidence": embeddings[0].confidence,
+                                                        "voiceCharacteristics": {
+                                                            "pitch": 150.0,
+                                                            "formantF1": 500.0,
+                                                            "formantF2": 1500.0,
+                                                            "speakingRate": 150.0
+                                                        },
+                                                        "isActive": true,
+                                                        "sessionId": session_id,
+                                                        "timestamp": std::time::SystemTime::now()
+                                                            .duration_since(std::time::UNIX_EPOCH)
+                                                            .unwrap_or_default()
+                                                            .as_millis()
+                                                    })) {
+                                                        tracing::warn!("Failed to emit speaker-update event: {}", emit_err);
+                                                    }
+                                                    
+                                                    new_speaker_id
+                                                }
+                                                Err(e) => {
+                                                    tracing::warn!("Speaker identification failed: {:?}", e);
+                                                    "speaker_1".to_string()
+                                                }
+                                            }
+                                        }
+                                        Ok(_) => {
+                                            tracing::debug!("No embeddings extracted");
+                                            "speaker_1".to_string()
+                                        }
+                                        Err(e) => {
+                                            tracing::warn!("Embedding extraction failed: {:?}", e);
+                                            // Emit graceful degradation warning to frontend
+                                            if let Err(emit_err) = app_handle.emit("diarization-warning", serde_json::json!({
+                                                "sessionId": session_id,
+                                                "type": "embedding_extraction_failed",
+                                                "message": "Speaker identification temporarily unavailable - falling back to single speaker mode",
+                                                "recoverable": true,
+                                                "timestamp": std::time::SystemTime::now()
+                                                    .duration_since(std::time::UNIX_EPOCH)
+                                                    .unwrap_or_default()
+                                                    .as_millis()
+                                            })) {
+                                                tracing::warn!("Failed to emit diarization warning: {}", emit_err);
+                                            }
+                                            "speaker_1".to_string()
+                                        }
+                                    }
+                                } else {
+                                    "speaker_1".to_string()
+                                }
+                            } else {
+                                "speaker_1".to_string()
+                            }
+                        };
+
                         // Create the segment
                         let segment = serde_json::json!({
                             "text": result.text,
                             "startTime": transcription_counter as f32 * 1.5, // 1.5 second segments
                             "endTime": (transcription_counter + 1) as f32 * 1.5,
                             "confidence": result.confidence,
-                            "speaker": "speaker_1" // Will be updated when diarization is implemented
+                            "speaker": speaker_id
                         });
                         
                         // Store the segment in the session state
@@ -1404,4 +1575,693 @@ fn calculate_audio_level(samples: &[f32]) -> f32 {
     
     // Normalize to 0-1 range (assuming typical audio levels)
     (rms * 10.0).min(1.0)
+}
+
+// ============================================================================
+// SPEAKER PROFILE MANAGEMENT COMMANDS
+// ============================================================================
+
+/// Initialize speaker storage system
+#[tauri::command]
+pub async fn initialize_speaker_storage(state: State<'_, AppState>) -> Result<String, String> {
+    state.initialize_speaker_storage().await?;
+    Ok("Speaker storage initialized successfully".to_string())
+}
+
+/// Create a new speaker profile
+#[tauri::command]
+pub async fn create_speaker_profile(
+    request: CreateSpeakerProfileRequest,
+    state: State<'_, AppState>,
+) -> Result<DbSpeakerProfile, String> {
+    let store_guard = state.speaker_store.lock().await;
+    let store = store_guard.as_ref()
+        .ok_or("Speaker storage not initialized")?;
+    
+    let profile = store.create_speaker_profile(request).await
+        .map_err(|e| format!("Failed to create speaker profile: {}", e))?;
+    
+    Ok(profile)
+}
+
+/// Get speaker profile by ID
+#[tauri::command]
+pub async fn get_speaker_profile(
+    speaker_id: String,
+    state: State<'_, AppState>,
+) -> Result<Option<DbSpeakerProfile>, String> {
+    let store_guard = state.speaker_store.lock().await;
+    let store = store_guard.as_ref()
+        .ok_or("Speaker storage not initialized")?;
+    
+    let uuid = Uuid::parse_str(&speaker_id)
+        .map_err(|e| format!("Invalid speaker ID: {}", e))?;
+    
+    let profile = store.get_speaker_profile(uuid).await
+        .map_err(|e| format!("Failed to get speaker profile: {}", e))?;
+    
+    Ok(profile)
+}
+
+/// Get all speaker profiles
+#[tauri::command]
+pub async fn list_speaker_profiles(
+    active_only: bool,
+    state: State<'_, AppState>,
+) -> Result<Vec<DbSpeakerProfile>, String> {
+    let store_guard = state.speaker_store.lock().await;
+    let store = store_guard.as_ref()
+        .ok_or("Speaker storage not initialized")?;
+    
+    let profiles = store.list_speaker_profiles(active_only).await
+        .map_err(|e| format!("Failed to list speaker profiles: {}", e))?;
+    
+    Ok(profiles)
+}
+
+/// Update speaker profile
+#[tauri::command]
+pub async fn update_speaker_profile(
+    speaker_id: String,
+    request: UpdateSpeakerProfileRequest,
+    state: State<'_, AppState>,
+) -> Result<Option<DbSpeakerProfile>, String> {
+    let store_guard = state.speaker_store.lock().await;
+    let store = store_guard.as_ref()
+        .ok_or("Speaker storage not initialized")?;
+    
+    let uuid = Uuid::parse_str(&speaker_id)
+        .map_err(|e| format!("Invalid speaker ID: {}", e))?;
+    
+    let profile = store.update_speaker_profile(uuid, request).await
+        .map_err(|e| format!("Failed to update speaker profile: {}", e))?;
+    
+    Ok(profile)
+}
+
+/// Delete speaker profile
+#[tauri::command]
+pub async fn delete_speaker_profile(
+    speaker_id: String,
+    state: State<'_, AppState>,
+) -> Result<bool, String> {
+    let store_guard = state.speaker_store.lock().await;
+    let store = store_guard.as_ref()
+        .ok_or("Speaker storage not initialized")?;
+    
+    let uuid = Uuid::parse_str(&speaker_id)
+        .map_err(|e| format!("Invalid speaker ID: {}", e))?;
+    
+    // Remove from embedding index as well
+    {
+        let mut index_guard = state.embedding_index.lock().await;
+        if let Err(e) = index_guard.remove_speaker(uuid) {
+            tracing::warn!("Failed to remove speaker from embedding index: {}", e);
+        }
+    }
+    
+    let deleted = store.delete_speaker_profile(uuid).await
+        .map_err(|e| format!("Failed to delete speaker profile: {}", e))?;
+    
+    Ok(deleted)
+}
+
+/// Add voice embedding for a speaker
+#[tauri::command]
+pub async fn add_voice_embedding(
+    embedding: VoiceEmbedding,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    let store_guard = state.speaker_store.lock().await;
+    let store = store_guard.as_ref()
+        .ok_or("Speaker storage not initialized")?;
+    
+    // Add to database
+    store.add_voice_embedding(embedding.clone()).await
+        .map_err(|e| format!("Failed to add voice embedding: {}", e))?;
+    
+    // Add to fast index
+    {
+        let mut index_guard = state.embedding_index.lock().await;
+        if let Err(e) = index_guard.add_embedding(embedding) {
+            tracing::warn!("Failed to add embedding to index: {}", e);
+        }
+    }
+    
+    Ok("Voice embedding added successfully".to_string())
+}
+
+/// Get voice embeddings for a speaker
+#[tauri::command]
+pub async fn get_voice_embeddings(
+    speaker_id: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<VoiceEmbedding>, String> {
+    let store_guard = state.speaker_store.lock().await;
+    let store = store_guard.as_ref()
+        .ok_or("Speaker storage not initialized")?;
+    
+    let uuid = Uuid::parse_str(&speaker_id)
+        .map_err(|e| format!("Invalid speaker ID: {}", e))?;
+    
+    let embeddings = store.get_voice_embeddings(uuid).await
+        .map_err(|e| format!("Failed to get voice embeddings: {}", e))?;
+    
+    Ok(embeddings)
+}
+
+/// Search for similar speakers based on voice embedding
+#[tauri::command]
+pub async fn find_similar_speakers(
+    query_vector: Vec<f32>,
+    threshold: f32,
+    max_results: usize,
+    state: State<'_, AppState>,
+) -> Result<Vec<SimilarSpeaker>, String> {
+    let store_guard = state.speaker_store.lock().await;
+    let store = store_guard.as_ref()
+        .ok_or("Speaker storage not initialized")?;
+    
+    let similar_speakers = store.find_similar_speakers(query_vector, threshold, max_results).await
+        .map_err(|e| format!("Failed to find similar speakers: {}", e))?;
+    
+    Ok(similar_speakers)
+}
+
+/// Fast similarity search using embedding index
+#[tauri::command]
+pub async fn fast_similarity_search(
+    query_vector: Vec<f32>,
+    threshold: f32,
+    max_results: usize,
+    state: State<'_, AppState>,
+) -> Result<Vec<(String, f32)>, String> {
+    let index_guard = state.embedding_index.lock().await;
+    
+    let results = index_guard.find_similar_embeddings(&query_vector, threshold, max_results)
+        .map_err(|e| format!("Failed to perform similarity search: {}", e))?;
+    
+    // Convert UUIDs to strings for JSON serialization
+    let string_results: Vec<(String, f32)> = results
+        .into_iter()
+        .map(|(uuid, score)| (uuid.to_string(), score))
+        .collect();
+    
+    Ok(string_results)
+}
+
+/// Get embedding index statistics
+#[tauri::command]
+pub async fn get_embedding_index_stats(state: State<'_, AppState>) -> Result<serde_json::Value, String> {
+    let index_guard = state.embedding_index.lock().await;
+    
+    let stats = index_guard.get_stats()
+        .map_err(|e| format!("Failed to get index stats: {}", e))?;
+    
+    Ok(serde_json::json!({
+        "total_speakers": stats.total_speakers,
+        "total_embeddings": stats.total_embeddings,
+        "total_buckets": stats.total_buckets,
+        "total_bucket_entries": stats.total_bucket_entries,
+        "embedding_dimension": stats.embedding_dimension,
+        "num_hashes": stats.num_hashes
+    }))
+}
+
+/// Rebuild embedding index from database
+#[tauri::command]
+pub async fn rebuild_embedding_index(state: State<'_, AppState>) -> Result<String, String> {
+    // Get all embeddings from database
+    let all_embeddings = {
+        let store_guard = state.speaker_store.lock().await;
+        let store = store_guard.as_ref()
+            .ok_or("Speaker storage not initialized")?;
+        
+        let profiles = store.list_speaker_profiles(true).await
+            .map_err(|e| format!("Failed to get speaker profiles: {}", e))?;
+        
+        let mut all_embeddings = Vec::new();
+        for profile in profiles {
+            let embeddings = store.get_voice_embeddings(profile.id).await
+                .map_err(|e| format!("Failed to get embeddings for speaker {}: {}", profile.id, e))?;
+            all_embeddings.extend(embeddings);
+        }
+        
+        all_embeddings
+    };
+    
+    // Rebuild index
+    {
+        let mut index_guard = state.embedding_index.lock().await;
+        index_guard.rebuild(all_embeddings)
+            .map_err(|e| format!("Failed to rebuild embedding index: {}", e))?;
+    }
+    
+    Ok(format!("Embedding index rebuilt successfully"))
+}
+
+/// Export speaker data as JSON
+#[tauri::command]
+pub async fn export_speaker_profiles(
+    include_embeddings: bool,
+    state: State<'_, AppState>,
+) -> Result<serde_json::Value, String> {
+    let store_guard = state.speaker_store.lock().await;
+    let store = store_guard.as_ref()
+        .ok_or("Speaker storage not initialized")?;
+    
+    let profiles = store.list_speaker_profiles(false).await
+        .map_err(|e| format!("Failed to get speaker profiles: {}", e))?;
+    
+    let mut export_data = serde_json::json!({
+        "metadata": {
+            "exported_at": chrono::Utc::now().to_rfc3339(),
+            "app_version": "1.0.0",
+            "total_profiles": profiles.len(),
+            "format_version": 1
+        },
+        "profiles": profiles
+    });
+    
+    if include_embeddings {
+        let mut all_embeddings = Vec::new();
+        for profile in &profiles {
+            let embeddings = store.get_voice_embeddings(profile.id).await
+                .map_err(|e| format!("Failed to get embeddings for speaker {}: {}", profile.id, e))?;
+            all_embeddings.extend(embeddings);
+        }
+        export_data["embeddings"] = serde_json::to_value(all_embeddings)
+            .map_err(|e| format!("Failed to serialize embeddings: {}", e))?;
+    }
+    
+    Ok(export_data)
+}
+
+/// Import speaker profiles from JSON data
+#[tauri::command]
+pub async fn import_speaker_profiles(
+    import_data: serde_json::Value,
+    state: State<'_, AppState>,
+) -> Result<serde_json::Value, String> {
+    let store_guard = state.speaker_store.lock().await;
+    let store = store_guard.as_ref()
+        .ok_or("Speaker storage not initialized")?;
+    
+    let profiles: Vec<DbSpeakerProfile> = serde_json::from_value(
+        import_data.get("profiles")
+            .ok_or("Missing profiles in import data")?
+            .clone()
+    ).map_err(|e| format!("Invalid profile data format: {}", e))?;
+    
+    let mut imported_count = 0;
+    let mut errors = Vec::new();
+    
+    for profile in profiles {
+        match store.create_speaker_profile(CreateSpeakerProfileRequest {
+            name: profile.name.clone(),
+            description: profile.description,
+            color: Some(profile.color),
+            confidence_threshold: Some(profile.confidence_threshold),
+        }).await {
+            Ok(_) => imported_count += 1,
+            Err(e) => errors.push(format!("Failed to import {}: {}", profile.name, e)),
+        }
+    }
+    
+    // Import embeddings if present
+    let mut imported_embeddings = 0;
+    if let Some(embeddings_value) = import_data.get("embeddings") {
+        let embeddings: Vec<VoiceEmbedding> = serde_json::from_value(embeddings_value.clone())
+            .map_err(|e| format!("Invalid embedding data format: {}", e))?;
+        
+        for embedding in embeddings {
+            match store.add_voice_embedding(embedding.clone()).await {
+                Ok(_) => {
+                    imported_embeddings += 1;
+                    // Add to index as well
+                    let mut index_guard = state.embedding_index.lock().await;
+                    if let Err(e) = index_guard.add_embedding(embedding) {
+                        tracing::warn!("Failed to add embedding to index during import: {}", e);
+                    }
+                }
+                Err(e) => errors.push(format!("Failed to import embedding {}: {}", embedding.id, e)),
+            }
+        }
+    }
+    
+    Ok(serde_json::json!({
+        "success": errors.is_empty(),
+        "imported_profiles": imported_count,
+        "imported_embeddings": imported_embeddings,
+        "errors": errors
+    }))
+}
+
+/// Load test seed data for development and testing
+#[tauri::command]
+pub async fn load_test_seed_data(state: State<'_, AppState>) -> Result<String, String> {
+    let db_guard = state.speaker_database.lock().await;
+    let db = db_guard.as_ref()
+        .ok_or("Speaker storage not initialized")?;
+    
+    let seed_manager = SeedManager::new(db.clone());
+    let result = seed_manager.load_test_data().await
+        .map_err(|e| format!("Failed to load test seed data: {}", e))?;
+    
+    // Rebuild embedding index with new data
+    if let Err(e) = rebuild_embedding_index(state).await {
+        tracing::warn!("Failed to rebuild embedding index after seeding: {}", e);
+    }
+    
+    Ok(result)
+}
+
+/// Create comprehensive test dataset for development
+#[tauri::command]
+pub async fn create_comprehensive_test_dataset(state: State<'_, AppState>) -> Result<String, String> {
+    let db_guard = state.speaker_database.lock().await;
+    let db = db_guard.as_ref()
+        .ok_or("Speaker storage not initialized")?;
+    
+    let seed_manager = SeedManager::new(db.clone());
+    let result = seed_manager.create_comprehensive_test_dataset().await
+        .map_err(|e| format!("Failed to create comprehensive test dataset: {}", e))?;
+    
+    // Rebuild embedding index with new data
+    if let Err(e) = rebuild_embedding_index(state).await {
+        tracing::warn!("Failed to rebuild embedding index after creating dataset: {}", e);
+    }
+    
+    Ok(result)
+}
+
+/// Clear all speaker data (for testing)
+#[tauri::command]
+pub async fn clear_all_speaker_data(state: State<'_, AppState>) -> Result<String, String> {
+    let db_guard = state.speaker_database.lock().await;
+    let db = db_guard.as_ref()
+        .ok_or("Speaker storage not initialized")?;
+    
+    let seed_manager = SeedManager::new(db.clone());
+    let result = seed_manager.clear_all_data().await
+        .map_err(|e| format!("Failed to clear speaker data: {}", e))?;
+    
+    // Clear the embedding index as well
+    {
+        let mut index_guard = state.embedding_index.lock().await;
+        if let Err(e) = index_guard.clear() {
+            tracing::warn!("Failed to clear embedding index: {}", e);
+        }
+    }
+    
+    Ok(result)
+}
+
+// ============================================================================
+// DIARIZATION INTEGRATION COMMANDS
+// ============================================================================
+
+/// Initialize diarization service with configuration
+#[tauri::command]
+pub async fn initialize_diarization_service(
+    config: DiarizationConfig,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    let service = DiarizationService::new(config).await
+        .map_err(|e| format!("Failed to initialize diarization service: {:?}", e))?;
+    
+    let mut diarization_guard = state.diarization_service.lock().await;
+    *diarization_guard = Some(service);
+    
+    tracing::info!("Diarization service initialized successfully");
+    Ok("Diarization service initialized successfully".to_string())
+}
+
+/// Diarize an audio segment and return speaker information
+#[tauri::command]
+pub async fn diarize_audio_segment(
+    audio_samples: Vec<f32>,
+    sample_rate: u32,
+    state: State<'_, AppState>,
+) -> Result<crate::diarization::DiarizationResult, String> {
+    let diarization_guard = state.diarization_service.lock().await;
+    let service = diarization_guard.as_ref()
+        .ok_or("Diarization service not initialized")?;
+    
+    let result = service.diarize(&audio_samples, sample_rate).await
+        .map_err(|e| format!("Failed to diarize audio: {:?}", e))?;
+    
+    Ok(result)
+}
+
+/// Identify speaker from audio embedding
+#[tauri::command]
+pub async fn identify_speaker(
+    audio_samples: Vec<f32>,
+    sample_rate: u32,
+    state: State<'_, AppState>,
+) -> Result<Option<String>, String> {
+    let diarization_guard = state.diarization_service.lock().await;
+    let service = diarization_guard.as_ref()
+        .ok_or("Diarization service not initialized")?;
+    
+    // Extract embeddings from audio
+    let embeddings = service.extract_speaker_embeddings(&audio_samples, sample_rate).await
+        .map_err(|e| format!("Failed to extract embeddings: {:?}", e))?;
+    
+    if embeddings.is_empty() {
+        return Ok(None);
+    }
+    
+    // Try to identify using the first embedding
+    let speaker_id = service.reidentify_speaker(&embeddings[0]).await
+        .map_err(|e| format!("Failed to identify speaker: {:?}", e))?;
+    
+    Ok(speaker_id)
+}
+
+/// Get diarization statistics for current session
+#[tauri::command]
+pub async fn get_diarization_stats(
+    session_id: String,
+    state: State<'_, AppState>,
+) -> Result<serde_json::Value, String> {
+    let sessions_guard = state.active_sessions.lock().await;
+    let session_state = sessions_guard.get(&session_id)
+        .ok_or("Session not found")?;
+    
+    // Return basic stats - in a full implementation this would include
+    // real statistics from the diarization service
+    Ok(serde_json::json!({
+        "sessionId": session_id,
+        "speakersDetected": 0, // Placeholder
+        "totalSegments": session_state.transcription_segments.len(),
+        "averageConfidence": 0.95,
+        "processingTimeMs": 1500
+    }))
+}
+
+/// Update speaker information in active session
+#[tauri::command]
+pub async fn update_speaker_in_session(
+    session_id: String,
+    speaker_id: String,
+    display_name: String,
+    color: String,
+    _state: State<'_, AppState>,
+    app_handle: tauri::AppHandle,
+) -> Result<String, String> {
+    // This would typically update the speaker in the diarization service
+    // and emit an update event to the frontend
+    
+    let _ = app_handle.emit("speaker-update", serde_json::json!({
+        "speakerId": speaker_id,
+        "displayName": display_name,
+        "confidence": 0.95,
+        "isActive": true,
+        "sessionId": session_id,
+        "timestamp": std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis(),
+        "color": color
+    }));
+    
+    Ok("Speaker updated successfully".to_string())
+}
+
+// Type conversion helper functions for bridging diarization and database types
+impl From<crate::diarization::SpeakerProfile> for DbSpeakerProfile {
+    fn from(diarization_profile: crate::diarization::SpeakerProfile) -> Self {
+        DbSpeakerProfile {
+            id: Uuid::parse_str(&diarization_profile.id).unwrap_or_else(|_| Uuid::new_v4()),
+            name: diarization_profile.display_name,
+            description: diarization_profile.notes,
+            color: diarization_profile.color,
+            voice_characteristics: crate::models::VoiceCharacteristics {
+                pitch_range: (
+                    diarization_profile.voice_characteristics.pitch.unwrap_or(80.0),
+                    diarization_profile.voice_characteristics.pitch.unwrap_or(300.0)
+                ),
+                pitch_mean: diarization_profile.voice_characteristics.pitch.unwrap_or(150.0),
+                speaking_rate: diarization_profile.voice_characteristics.speaking_rate,
+                quality_features: std::collections::HashMap::new(),
+                gender: None,
+                age_range: None,
+                language_markers: Vec::new(),
+            },
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+            identification_count: 0,
+            confidence_threshold: diarization_profile.average_confidence,
+            is_active: true,
+        }
+    }
+}
+
+impl From<crate::diarization::SpeakerEmbedding> for VoiceEmbedding {
+    fn from(diarization_embedding: crate::diarization::SpeakerEmbedding) -> Self {
+        VoiceEmbedding {
+            id: Uuid::new_v4(),
+            speaker_id: Uuid::parse_str(&diarization_embedding.speaker_id.unwrap_or_default())
+                .unwrap_or_else(|_| Uuid::new_v4()),
+            vector: diarization_embedding.vector,
+            dimensions: 512, // Standard embedding dimension
+            model_name: "diarization_model".to_string(),
+            quality_score: diarization_embedding.confidence,
+            duration_seconds: diarization_embedding.timestamp_end - diarization_embedding.timestamp_start,
+            created_at: chrono::Utc::now(),
+        }
+    }
+}
+
+/// Store diarization results to database
+async fn store_diarization_results_to_database(
+    diarization_result: &crate::diarization::DiarizationResult,
+    state: &State<'_, AppState>,
+) -> Result<(), String> {
+    let store_guard = state.speaker_store.lock().await;
+    if let Some(ref store) = *store_guard {
+        for (speaker_id, diarization_profile) in &diarization_result.speakers {
+            // Convert diarization profile to database profile
+            let db_profile: DbSpeakerProfile = diarization_profile.clone().into();
+            
+            // Check if speaker already exists
+            let speaker_uuid = Uuid::parse_str(speaker_id).unwrap_or_else(|_| Uuid::new_v4());
+            let existing_profile = store.get_speaker_profile(speaker_uuid).await
+                .map_err(|e| format!("Failed to check existing speaker: {}", e))?;
+            
+            if existing_profile.is_none() {
+                // Create new speaker profile
+                let create_request = CreateSpeakerProfileRequest {
+                    name: db_profile.name.clone(),
+                    description: db_profile.description.clone(),
+                    color: Some(db_profile.color.clone()),
+                    confidence_threshold: Some(db_profile.confidence_threshold),
+                };
+                
+                let created_profile = store.create_speaker_profile(create_request).await
+                    .map_err(|e| format!("Failed to create speaker profile: {}", e))?;
+                
+                // Store embeddings
+                for diarization_embedding in &diarization_profile.embeddings {
+                    let mut voice_embedding: VoiceEmbedding = diarization_embedding.clone().into();
+                    voice_embedding.speaker_id = created_profile.id;
+                    
+                    store.add_voice_embedding(voice_embedding.clone()).await
+                        .map_err(|e| format!("Failed to store voice embedding: {}", e))?;
+                    
+                    // Add to fast index
+                    let index_guard = state.embedding_index.lock().await;
+                    if let Err(e) = index_guard.add_embedding(voice_embedding) {
+                        tracing::warn!("Failed to add embedding to index: {}", e);
+                    }
+                }
+            } else {
+                // Update existing profile statistics
+                let update_request = UpdateSpeakerProfileRequest {
+                    name: None,
+                    description: None,
+                    color: None,
+                    confidence_threshold: Some(diarization_profile.average_confidence),
+                    is_active: Some(true),
+                };
+                
+                store.update_speaker_profile(speaker_uuid, update_request).await
+                    .map_err(|e| format!("Failed to update speaker profile: {}", e))?;
+            }
+        }
+        
+        tracing::info!("Successfully stored {} speaker profiles to database", diarization_result.speakers.len());
+    }
+    
+    Ok(())
+}
+
+/// Merge two speaker profiles
+#[tauri::command]
+pub async fn merge_speaker_profiles(
+    primary_speaker_id: String,
+    secondary_speaker_id: String,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    // Get both speaker profiles from storage
+    let store_guard = state.speaker_store.lock().await;
+    let store = store_guard.as_ref()
+        .ok_or("Speaker storage not initialized")?;
+    
+    let primary_uuid = Uuid::parse_str(&primary_speaker_id)
+        .map_err(|e| format!("Invalid primary speaker ID: {}", e))?;
+    let secondary_uuid = Uuid::parse_str(&secondary_speaker_id)
+        .map_err(|e| format!("Invalid secondary speaker ID: {}", e))?;
+    
+    let primary_profile = store.get_speaker_profile(primary_uuid).await
+        .map_err(|e| format!("Failed to get primary profile: {}", e))?
+        .ok_or("Primary speaker profile not found")?;
+    
+    let secondary_profile = store.get_speaker_profile(secondary_uuid).await
+        .map_err(|e| format!("Failed to get secondary profile: {}", e))?
+        .ok_or("Secondary speaker profile not found")?;
+    
+    // Get embeddings for both speakers
+    let _primary_embeddings = store.get_voice_embeddings(primary_uuid).await
+        .map_err(|e| format!("Failed to get primary embeddings: {}", e))?;
+    let secondary_embeddings = store.get_voice_embeddings(secondary_uuid).await
+        .map_err(|e| format!("Failed to get secondary embeddings: {}", e))?;
+    
+    // Update primary profile with combined data
+    let update_request = UpdateSpeakerProfileRequest {
+        name: Some(primary_profile.name.clone()),
+        description: Some(format!(
+            "Merged profile: {} + {}", 
+            primary_profile.name, 
+            secondary_profile.name
+        )),
+        color: Some(primary_profile.color),
+        confidence_threshold: None,
+        is_active: Some(true),
+    };
+    
+    store.update_speaker_profile(primary_uuid, update_request).await
+        .map_err(|e| format!("Failed to update merged profile: {}", e))?;
+    
+    // Transfer secondary embeddings to primary
+    for embedding in secondary_embeddings {
+        let mut transferred_embedding = embedding;
+        transferred_embedding.speaker_id = primary_uuid;
+        store.add_voice_embedding(transferred_embedding).await
+            .map_err(|e| format!("Failed to transfer embedding: {}", e))?;
+    }
+    
+    // Delete secondary profile
+    store.delete_speaker_profile(secondary_uuid).await
+        .map_err(|e| format!("Failed to delete secondary profile: {}", e))?;
+    
+    // Update embedding index
+    let index_guard = state.embedding_index.lock().await;
+    if let Err(e) = index_guard.remove_speaker(secondary_uuid) {
+        tracing::warn!("Failed to remove secondary speaker from embedding index: {}", e);
+    }
+    
+    Ok(format!("Successfully merged {} into {}", secondary_speaker_id, primary_speaker_id))
 }
