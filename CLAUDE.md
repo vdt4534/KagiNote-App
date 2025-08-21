@@ -14,9 +14,10 @@ KagiNote is a privacy-focused meeting transcription application built with Tauri
 - Frontend communicates with Rust backend through Tauri's invoke API
 
 **Key Dependencies:**
-- **Frontend**: React 19, Radix UI themes, WaveSurfer.js for audio visualization
+- **Frontend**: React 19, Radix UI themes, Tailwind CSS v3, WaveSurfer.js for audio visualization
 - **Backend**: Tauri v2, cpal for audio capture, hound for audio file handling, tokio for async operations
-- **Build Tools**: Vite for frontend bundling, TypeScript compiler
+- **Build Tools**: Vite for frontend bundling, PostCSS for CSS processing, TypeScript compiler
+- **Styling**: Tailwind CSS v3.4.17 with PostCSS and Autoprefixer integration
 
 ## Development Commands
 
@@ -45,7 +46,16 @@ brew install cmake
 
 # Verify Rust environment
 source ~/.cargo/env
+export MACOSX_DEPLOYMENT_TARGET=10.15
 cargo check
+```
+
+**Styling Development:**
+```bash
+# Tailwind CSS is configured with PostCSS and processes automatically during:
+npm run dev          # Development with hot reload
+npm run build        # Production build with optimization
+# Configuration files: tailwind.config.js, postcss.config.js
 ```
 
 ## Audio Processing Architecture
@@ -179,6 +189,10 @@ cargo bench pipeline_benchmark
 - Production-ready implementation with comprehensive test coverage
 - Frontend uses modern React 19 with functional components and hooks
 - TypeScript strict mode enabled with full type safety
+- **Tailwind CSS v3.4.17**: Utility-first CSS framework with PostCSS integration
+- **Design System**: Tailwind utilities work seamlessly with Radix UI components
+- **Styling Architecture**: Custom CSS + Tailwind utilities for rapid UI development
+- **Cross-platform CSS**: Tailwind generates consistent styles across all platforms
 - Privacy-first architecture validated through security audit
 - Cross-platform compatibility tested on Windows, macOS, Linux
 

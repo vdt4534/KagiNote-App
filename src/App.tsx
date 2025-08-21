@@ -113,9 +113,9 @@ function App() {
 
   if (!appState.isAppReady) {
     return (
-      <div className="loading-container">
-        <div>Loading KagiNote...</div>
-        <div data-testid="system-check-running">Checking system requirements...</div>
+      <div className="flex flex-col items-center justify-center h-screen bg-gray-50 gap-5">
+        <div className="text-xl font-semibold text-gray-700">Loading KagiNote...</div>
+        <div data-testid="system-check-running" className="text-gray-500">Checking system requirements...</div>
       </div>
     );
   }
