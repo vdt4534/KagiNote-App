@@ -69,12 +69,24 @@ function App() {
   useEffect(() => {
     const initializeApp = async () => {
       try {
+        console.log('Initializing app...');
         // Load existing meetings from localStorage
         const loadMeetings = () => {
           try {
             const imported = JSON.parse(localStorage.getItem('imported-meetings') || '[]');
             const recorded = JSON.parse(localStorage.getItem('recorded-meetings') || '[]');
-            return [...imported, ...recorded];
+            console.log('Loaded meetings:', { imported, recorded });
+            
+            // Convert date strings back to Date objects
+            const convertDates = (meeting: any) => ({
+              ...meeting,
+              date: meeting.date ? new Date(meeting.date) : new Date()
+            });
+            
+            const importedWithDates = imported.map(convertDates);
+            const recordedWithDates = recorded.map(convertDates);
+            
+            return [...importedWithDates, ...recordedWithDates];
           } catch (error) {
             console.error('Failed to load meetings from localStorage:', error);
             return [];
@@ -85,6 +97,7 @@ function App() {
         
         // Perform any necessary initialization
         await new Promise(resolve => setTimeout(resolve, 500));
+        console.log('Setting app as ready');
         setAppState(prev => ({ ...prev, isAppReady: true, meetings }));
       } catch (error) {
         console.error('Failed to initialize app:', error);
