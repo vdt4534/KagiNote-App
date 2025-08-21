@@ -1,11 +1,12 @@
-# KagiNote
+# KagiNote V2
 
-**Privacy-focused meeting transcription that runs entirely on your device.**
+**Privacy-focused meeting transcription with modern UI/UX - runs entirely on your device.**
 
-KagiNote is a **production-ready** desktop application built with Tauri v2 that provides real-time meeting transcription with complete privacy - no audio data ever leaves your machine. Supports 100+ languages with optimized performance and persistent model caching.
+KagiNote V2 is a **production-ready** desktop application built with Tauri v2, React 19, and Tailwind CSS that provides real-time meeting transcription with complete privacy - no audio data ever leaves your machine. Features a modern dashboard, audio file import, and persistent meeting management.
 
-## Features
+## V2 Features (August 2025)
 
+### Core Transcription
 - **🔒 Privacy First**: 100% local processing, zero network calls during transcription
 - **🎤 Universal Audio Support**: Works with any microphone - automatic device compatibility
 - **🔄 Smart Resampling**: Automatic sample rate conversion (any device rate → 16kHz for Whisper)
@@ -13,8 +14,15 @@ KagiNote is a **production-ready** desktop application built with Tauri v2 that 
 - **⚡ Instant Startup**: <1 second load time with cached models (first run: ~2 minutes)
 - **🌐 Multilingual**: Supports 100+ languages via Whisper models
 - **🎛️ Quality Tiers**: Standard (1.5GB), High Accuracy (2.4GB), Turbo (1.2GB) models
-- **📱 Real-time Display**: Live transcription text appears as you speak (~1.5s latency)
-- **🖥️ Production Ready**: Fully functional with comprehensive error handling
+
+### New V2 Interface
+- **📊 Modern Dashboard**: Meeting list with search, sorting, and filtering
+- **📁 Audio File Import**: Import and transcribe WAV, MP3, M4A, WebM files
+- **💾 Persistent Storage**: All meetings saved to localStorage with metadata
+- **🎨 Beautiful UI**: Tailwind CSS v3 with custom design system
+- **🖥️ Platform-Aware**: Automatic OS detection with platform-specific styling
+- **📱 Real-time Display**: Live transcription with audio visualization
+- **🗂️ Meeting Management**: Create, save, delete, and review transcripts
 
 ## Quick Start
 
@@ -88,6 +96,36 @@ npm run tauri build
 - **Memory protection** with secure audio buffer wiping
 - **OWASP compliant** with enterprise security standards
 - **Source code audited** for privacy compliance
+
+## V2 Architecture
+
+### Frontend Structure
+```
+src/
+├── components/
+│   ├── ui/           # Reusable UI primitives
+│   ├── features/     # Feature-specific components  
+│   └── layout/       # Layout components
+├── screens/          # Full screen views
+├── hooks/            # Custom React hooks
+├── lib/              # Utilities and helpers
+└── styles/           # Global CSS and Tailwind
+```
+
+### Technology Stack
+- **Frontend**: React 19, TypeScript, Tailwind CSS v3
+- **Backend**: Rust, Tauri v2, whisper-rs
+- **Audio**: cpal, hound, real-time resampling
+- **State**: React hooks, localStorage for persistence
+- **Styling**: Tailwind utilities + custom design system
+
+### Breaking Changes from V1
+- Complete UI redesign with new component architecture
+- Dashboard replaces simple recording view
+- Meeting management system added
+- Audio file import functionality
+- Platform-aware UI components
+- localStorage for data persistence
 
 ## Documentation
 

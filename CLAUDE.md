@@ -184,13 +184,38 @@ cargo bench pipeline_benchmark
 - **Automatic language detection** with confidence-based routing
 - **Mixed-language meetings** supported in multilingual mode
 
+## V2 Architecture (August 2025)
+
+**Component Architecture:**
+- `src/components/ui/` - Reusable UI primitives (Button, Card, Badge, Input, Modal, Icon)
+- `src/components/features/` - Feature-specific components (AudioVisualizer, TranscriptionController, TranscriptView)
+- `src/components/layout/` - Layout components (AppLayout, TitleBar, Sidebar, StatusBar)
+- `src/screens/` - Full screen views (Dashboard, RecordingScreen, NewMeetingModal)
+- `src/hooks/` - Custom React hooks (usePlatform for OS detection)
+- `src/lib/` - Utility functions and helpers
+
+**Key V2 Features:**
+- **Dashboard with Real Data**: Meeting list with localStorage persistence, search, and sorting
+- **Audio File Import**: Support for WAV, MP3, M4A, WebM file transcription
+- **Meeting Management**: Create, save, delete, and review meeting transcripts
+- **Live Recording Integration**: Real-time transcription display with audio visualization
+- **Platform-Aware UI**: Automatic OS detection with platform-specific styling
+- **Type-Safe Architecture**: Full TypeScript coverage with strict mode
+
+**Design System Integration:**
+- Tailwind CSS v3.4.17 for utility-first styling
+- Custom design tokens in tailwind.config.js
+- Radix UI colors for consistent theming
+- Responsive design with mobile-first approach
+- Dark mode support via CSS variables
+
 ## Development Notes
 
 - Production-ready implementation with comprehensive test coverage
 - Frontend uses modern React 19 with functional components and hooks
 - TypeScript strict mode enabled with full type safety
 - **Tailwind CSS v3.4.17**: Utility-first CSS framework with PostCSS integration
-- **Design System**: Tailwind utilities work seamlessly with Radix UI components
+- **Design System**: Tailwind utilities work seamlessly with custom UI components
 - **Styling Architecture**: Custom CSS + Tailwind utilities for rapid UI development
 - **Cross-platform CSS**: Tailwind generates consistent styles across all platforms
 - Privacy-first architecture validated through security audit
