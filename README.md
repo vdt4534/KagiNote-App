@@ -14,6 +14,8 @@ KagiNote V2 is a **production-ready** desktop application built with Tauri v2, R
 - **⚡ Instant Startup**: <1 second load time with cached models (first run: ~2 minutes)
 - **🌐 Multilingual**: Supports 100+ languages via Whisper models
 - **🎛️ Quality Tiers**: Standard (1.5GB), High Accuracy (2.4GB), Turbo (1.2GB) models
+- **💾 Segment Storage**: Real-time transcription segments stored and accumulated during sessions
+- **🎯 Live Display**: Actual transcription text displayed in real-time (not placeholders)
 
 ### New V2 Interface
 - **📊 Modern Dashboard**: Meeting list with search, sorting, and filtering
@@ -23,7 +25,7 @@ KagiNote V2 is a **production-ready** desktop application built with Tauri v2, R
 - **🖥️ Platform-Aware**: Native look on macOS/Windows with platform-specific adaptations
 - **📱 Real-time Display**: Live transcription with audio visualization
 - **🗂️ Meeting Management**: Create, save, delete, and review transcripts
-- **💬 Speaker Separation**: Chat-style bubbles for clear speaker identification
+- **💬 Speaker Separation**: Chat-style bubbles for clear speaker identification (diarization planned)
 
 ## Quick Start
 
@@ -47,6 +49,9 @@ pnpm install
 source ~/.cargo/env
 export MACOSX_DEPLOYMENT_TARGET=10.15
 npm run tauri dev
+
+# Start with debug logging to monitor transcription
+RUST_LOG=debug npm run tauri dev
 
 # Build for production
 npm run tauri build
@@ -136,6 +141,8 @@ src/
 - [Integration Guide](INTEGRATION_SUMMARY.md)
 - [Development Guide](CLAUDE.md)
 - [Design System](Documents/DESIGN-UNIFIED.md)
+- [Transcription Debug Report & Diarization Plan](Documents/transcription-debug-report.md)
+- [Initial Implementation Plan](Documents/initial-implementation-plan.md)
 
 ## System Requirements
 

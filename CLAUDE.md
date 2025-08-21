@@ -111,7 +111,8 @@ The app is designed for audio capture and processing with universal device compa
 - **Audio Resampling**: Automatic sample rate conversion for device compatibility (any rate → 16kHz for Whisper)
 - **Device Profiles**: Smart device detection with cached optimal configurations for Apple devices
 - **Session Management**: Proper state management with concurrent session prevention
-- **Real-time Transcription Display**: Live text updates in React frontend
+- **Real-time Transcription Display**: Live text updates in React frontend with actual AI-generated text
+- **Segment Storage**: Transcription segments stored and accumulated during recording sessions
 - **Error Handling**: Comprehensive error recovery and user feedback
 - **Privacy-first architecture**: Zero network calls during transcription
 - **macOS Permissions**: Proper microphone access with NSMicrophoneUsageDescription
@@ -125,7 +126,7 @@ The app is designed for audio capture and processing with universal device compa
 - `src-tauri/src/audio/vad.rs` - Voice activity detection with optimized async trait implementation
 - `src-tauri/src/asr/whisper.rs` - Production Whisper engine with automatic audio format conversion
 - `src-tauri/src/asr/model_manager.rs` - Persistent model caching with metadata tracking
-- `src-tauri/src/commands.rs` - Complete Tauri API with enhanced audio error reporting and device troubleshooting
+- `src-tauri/src/commands.rs` - Complete Tauri API with segment storage and real-time transcription emission
 - `src-tauri/src/lib.rs` - App initialization with proper cleanup handlers
 
 **Frontend Components:**
@@ -279,6 +280,8 @@ claude
 - ✅ All compilation warnings resolved
 - ✅ Emergency stop functionality for stuck audio capture
 - ✅ Model download progress tracking and status feedback
+- ✅ Real-time transcription segment storage and retrieval
+- ✅ Live transcription display with actual AI-generated text (not placeholders)
 
 **✅ Whisper.cpp Production Integration:**
 - ✅ Real Whisper inference with model loading
@@ -303,3 +306,29 @@ claude
 - ✅ **Enhanced Diagnostics**: Device-specific troubleshooting and error guidance
 - ✅ **Quality Preservation**: Audio quality maintained through resampling (SNR >40dB)
 - ✅ **Zero Configuration**: Automatic sample rate detection and optimal settings
+
+## Troubleshooting
+
+### Transcription Not Showing
+If transcription shows placeholder text instead of actual speech:
+1. Check that Whisper models are downloaded: `~/Library/Application Support/KagiNote/models/`
+2. Run with debug logging: `RUST_LOG=debug npm run tauri dev`
+3. Verify microphone permissions in System Settings
+4. Ensure you speak for at least 2 seconds (1.5s minimum buffer)
+
+### Monitor Transcription Events
+In browser console:
+```javascript
+window.__TAURI__.event.listen('transcription-update', (event) => {
+  console.log('Transcription:', event.payload);
+});
+```
+
+## Speaker Diarization (Planned)
+
+Currently, all transcription segments use a single speaker ("speaker_1"). Speaker diarization is planned:
+
+**Phase 1**: sherpa-onnx integration for 2-3 speaker identification (CPU-friendly)
+**Phase 2**: pyannote integration for 10+ speaker support (GPU-accelerated)
+
+See [Transcription Debug Report & Diarization Plan](Documents/transcription-debug-report.md) for full implementation details.
