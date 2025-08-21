@@ -202,12 +202,35 @@ cargo bench pipeline_benchmark
 - **Platform-Aware UI**: Automatic OS detection with platform-specific styling
 - **Type-Safe Architecture**: Full TypeScript coverage with strict mode
 
-**Design System Integration:**
+## Design System
+
+**Comprehensive design documentation available in `Documents/DESIGN-UNIFIED.md`**
+
+**Design Philosophy:**
+- **Privacy-First Visual Language**: Shield/lock iconography, local processing indicators
+- **Professional Context**: Business-appropriate aesthetics with keyboard-first navigation
+- **Cross-Platform Consistency**: 80% shared design, 20% platform-specific adaptations
+- **Performance as Design**: <100ms interactions, 60fps animations throughout
+
+**Visual System:**
+- **Colors**: Trust Blue (#2563EB), Privacy Green (#10B981), Professional Grays
+- **Typography**: System fonts first (SF Pro, Segoe UI), CJK support for Japanese
+- **Spacing**: 4px base unit system for consistent layouts
+- **Components**: Modular architecture with ui/, layout/, and features/ separation
+
+**UX Implementation:**
+- **Professional Hybrid Approach**: Chat-style speaker bubbles with business aesthetics
+- **Timeline Navigation**: Temporal view for long meetings and power users
+- **Adaptive Features**: Progressive disclosure based on context and usage
+
+**Technical Stack:**
 - Tailwind CSS v3.4.17 for utility-first styling
 - Custom design tokens in tailwind.config.js
 - Radix UI colors for consistent theming
 - Responsive design with mobile-first approach
 - Dark mode support via CSS variables
+
+For complete design specifications, component patterns, and implementation guidelines, see `Documents/DESIGN-UNIFIED.md`.
 
 ## Development Notes
 

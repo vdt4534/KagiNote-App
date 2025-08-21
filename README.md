@@ -1,8 +1,8 @@
 # KagiNote V2
 
-**Privacy-focused meeting transcription with modern UI/UX - runs entirely on your device.**
+**Privacy-focused meeting transcription with professional UI/UX - runs entirely on your device.**
 
-KagiNote V2 is a **production-ready** desktop application built with Tauri v2, React 19, and Tailwind CSS that provides real-time meeting transcription with complete privacy - no audio data ever leaves your machine. Features a modern dashboard, audio file import, and persistent meeting management.
+KagiNote V2 is a **production-ready** desktop application built with Tauri v2, React 19, and Tailwind CSS that provides real-time meeting transcription with complete privacy - no audio data ever leaves your machine. Features a modern dashboard with chat-style speaker separation, audio file import, and persistent meeting management with a privacy-first design language.
 
 ## V2 Features (August 2025)
 
@@ -19,10 +19,11 @@ KagiNote V2 is a **production-ready** desktop application built with Tauri v2, R
 - **📊 Modern Dashboard**: Meeting list with search, sorting, and filtering
 - **📁 Audio File Import**: Import and transcribe WAV, MP3, M4A, WebM files
 - **💾 Persistent Storage**: All meetings saved to localStorage with metadata
-- **🎨 Beautiful UI**: Tailwind CSS v3 with custom design system
-- **🖥️ Platform-Aware**: Automatic OS detection with platform-specific styling
+- **🎨 Professional Design System**: Privacy-first visual language with business aesthetics
+- **🖥️ Platform-Aware**: Native look on macOS/Windows with platform-specific adaptations
 - **📱 Real-time Display**: Live transcription with audio visualization
 - **🗂️ Meeting Management**: Create, save, delete, and review transcripts
+- **💬 Speaker Separation**: Chat-style bubbles for clear speaker identification
 
 ## Quick Start
 
@@ -113,11 +114,12 @@ src/
 ```
 
 ### Technology Stack
-- **Frontend**: React 19, TypeScript, Tailwind CSS v3
-- **Backend**: Rust, Tauri v2, whisper-rs
-- **Audio**: cpal, hound, real-time resampling
+- **Frontend**: React 19, TypeScript, Tailwind CSS v3.4.17
+- **Backend**: Rust, Tauri v2, whisper-rs with Metal acceleration
+- **Audio**: cpal, hound, real-time resampling with device profiles
 - **State**: React hooks, localStorage for persistence
-- **Styling**: Tailwind utilities + custom design system
+- **Design**: Privacy-first visual language, professional UI components
+- **Styling**: Tailwind utilities + comprehensive design system
 
 ### Breaking Changes from V1
 - Complete UI redesign with new component architecture
@@ -133,6 +135,7 @@ src/
 - [Technical Architecture](PRPs/active/kaginote-architecture.md)
 - [Integration Guide](INTEGRATION_SUMMARY.md)
 - [Development Guide](CLAUDE.md)
+- [Design System](Documents/DESIGN-UNIFIED.md)
 
 ## System Requirements
 
