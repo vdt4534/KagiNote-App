@@ -58,6 +58,7 @@ pub struct TranscriptionSessionState {
     pub status: String,
     pub audio_capture: Option<String>, // Reference to audio capture instance
     pub whisper_config: WhisperConfig,
+    pub transcription_segments: Vec<serde_json::Value>, // Store transcription segments
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -537,6 +538,7 @@ pub async fn start_transcription(
         status: "active".to_string(),
         audio_capture: Some("primary".to_string()),
         whisper_config: whisper_config.clone(),
+        transcription_segments: Vec::new(), // Initialize empty segments vector
     };
     
     let mut sessions_guard = state.active_sessions.lock().await;
@@ -800,18 +802,27 @@ pub async fn stop_transcription(
         .as_secs();
     let total_duration = (current_time - session_state.start_time) as f32;
     
+    // Use the actual transcription segments if available, otherwise provide a default message
+    let segments = if !session_state.transcription_segments.is_empty() {
+        tracing::info!("Returning {} stored transcription segments", session_state.transcription_segments.len());
+        session_state.transcription_segments
+    } else {
+        tracing::warn!("No transcription segments found, returning placeholder");
+        vec![
+            serde_json::json!({
+                "text": "No transcription data available",
+                "startTime": 0.0,
+                "endTime": total_duration,
+                "confidence": 0.0,
+                "speaker": "speaker_1"
+            })
+        ]
+    };
+    
     let result = FinalTranscriptionResult {
         session_id: session_id.clone(),
         total_duration,
-        segments: vec![
-            serde_json::json!({
-                "text": "Session completed successfully",
-                "startTime": 0.0,
-                "endTime": total_duration,
-                "confidence": 0.95,
-                "speaker": "speaker_1"
-            })
-        ],
+        segments,
         speakers: Some(vec![
             serde_json::json!({
                 "id": "speaker_1",
@@ -1304,14 +1315,30 @@ async fn run_transcription_loop(
                 if let Some(result) = transcription_result {
                     if !result.text.trim().is_empty() {
                         tracing::info!("Emitting transcription update: '{}'", result.text);
+                        
+                        // Create the segment
+                        let segment = serde_json::json!({
+                            "text": result.text,
+                            "startTime": transcription_counter as f32 * 1.5, // 1.5 second segments
+                            "endTime": (transcription_counter + 1) as f32 * 1.5,
+                            "confidence": result.confidence,
+                            "speaker": "speaker_1" // Will be updated when diarization is implemented
+                        });
+                        
+                        // Store the segment in the session state
+                        {
+                            let mut sessions_guard = state.active_sessions.lock().await;
+                            if let Some(session_state) = sessions_guard.get_mut(&session_id) {
+                                session_state.transcription_segments.push(segment.clone());
+                                tracing::debug!("Stored segment #{} for session {}", 
+                                             session_state.transcription_segments.len(), session_id);
+                            }
+                        }
+                        
+                        // Emit the update to the frontend
                         if let Err(emit_err) = app_handle.emit("transcription-update", serde_json::json!({
                             "sessionId": session_id,
-                            "segment": {
-                                "text": result.text,
-                                "startTime": transcription_counter as f32 * 1.5, // 1.5 second segments
-                                "endTime": (transcription_counter + 1) as f32 * 1.5,
-                                "confidence": result.confidence
-                            },
+                            "segment": segment,
                             "updateType": "new",
                             "processingPass": 1
                         })) {

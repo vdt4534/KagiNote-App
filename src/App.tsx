@@ -400,18 +400,21 @@ function App() {
     console.log('Transcription update:', update);
     // Convert update to transcript segment and add to live transcript
     const newSegment: TranscriptSegment = {
-      id: `${Date.now()}-${Math.random()}`,
-      startTime: 0, // Would come from update
-      endTime: 0, // Would come from update  
-      speaker: 'Speaker 1', // Would come from update
-      text: (update as any).text || 'Live transcription text...',
-      confidence: 0.95 // Would come from update
+      id: `${update.sessionId}-${Date.now()}-${Math.random()}`,
+      startTime: update.segment?.startTime || 0,
+      endTime: update.segment?.endTime || 0,
+      speaker: update.segment?.speaker || 'Speaker 1',
+      text: update.segment?.text || '',
+      confidence: update.segment?.confidence || 0.95
     };
     
-    setAppState(prev => ({
-      ...prev,
-      transcriptSegments: [...prev.transcriptSegments, newSegment]
-    }));
+    // Only add non-empty segments
+    if (newSegment.text.trim()) {
+      setAppState(prev => ({
+        ...prev,
+        transcriptSegments: [...prev.transcriptSegments, newSegment]
+      }));
+    }
   };
 
   const handleError = (error: TranscriptionError) => {
