@@ -174,6 +174,7 @@ export const TranscriptView: React.FC<TranscriptViewProps> = ({
               data-segment-id={segment.id}
               className={cn(
                 'group p-4 rounded-lg border transition-all duration-200',
+                'max-h-[120px] overflow-hidden flex flex-col',
                 isCurrentSegment(segment) 
                   ? 'border-primary-300 bg-primary-50 dark:border-primary-700 dark:bg-primary-900/20'
                   : 'border-neutral-200 hover:border-neutral-300 dark:border-neutral-700 dark:hover:border-neutral-600',
@@ -181,7 +182,7 @@ export const TranscriptView: React.FC<TranscriptViewProps> = ({
               )}
             >
               {/* Segment Header */}
-              <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center justify-between mb-2 flex-shrink-0">
                 <div className="flex items-center gap-3">
                   {showSpeakers && (
                     <Badge 
@@ -227,43 +228,46 @@ export const TranscriptView: React.FC<TranscriptViewProps> = ({
               </div>
 
               {/* Segment Content */}
-              {editingSegmentId === segment.id ? (
-                <div className="space-y-2">
-                  <textarea
-                    value={editText}
-                    onChange={(e) => setEditText(e.target.value)}
-                    className="w-full p-2 border border-neutral-300 rounded-md resize-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:bg-neutral-800 dark:border-neutral-600"
-                    rows={3}
-                    autoFocus
-                  />
-                  <div className="flex gap-2">
-                    <Button
-                      size="sm"
-                      onClick={() => handleEditSave(segment.id)}
-                      disabled={!editText.trim()}
-                    >
-                      Save
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={handleEditCancel}
-                    >
-                      Cancel
-                    </Button>
+              <div className="flex-1 overflow-y-auto min-h-0">
+                {editingSegmentId === segment.id ? (
+                  <div className="space-y-2">
+                    <textarea
+                      value={editText}
+                      onChange={(e) => setEditText(e.target.value)}
+                      className="w-full p-2 border border-neutral-300 rounded-md resize-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 dark:bg-neutral-800 dark:border-neutral-600"
+                      rows={3}
+                      autoFocus
+                    />
+                    <div className="flex gap-2">
+                      <Button
+                        size="sm"
+                        onClick={() => handleEditSave(segment.id)}
+                        disabled={!editText.trim()}
+                      >
+                        Save
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={handleEditCancel}
+                      >
+                        Cancel
+                      </Button>
+                    </div>
                   </div>
-                </div>
-              ) : (
-                <p 
-                  className={cn(
-                    'text-neutral-900 dark:text-neutral-100 leading-relaxed',
-                    isCurrentSegment(segment) && 'font-medium'
-                  )}
-                  style={{ opacity: segment.confidence }}
-                >
-                  {highlightSearchText(segment.text, searchQuery)}
-                </p>
-              )}
+                ) : (
+                  <p 
+                    className={cn(
+                      'text-neutral-900 dark:text-neutral-100 leading-relaxed',
+                      isCurrentSegment(segment) && 'font-medium',
+                      'pr-2' // Add padding for scrollbar
+                    )}
+                    style={{ opacity: segment.confidence }}
+                  >
+                    {highlightSearchText(segment.text, searchQuery)}
+                  </p>
+                )}
+              </div>
             </div>
           ))
         )}
