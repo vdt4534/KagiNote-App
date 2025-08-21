@@ -196,6 +196,46 @@ cargo bench pipeline_benchmark
 - Privacy-first architecture validated through security audit
 - Cross-platform compatibility tested on Windows, macOS, Linux
 
+## Parallel Development with Git Worktrees
+
+For running multiple Claude Code sessions simultaneously with complete code isolation:
+
+**Create and manage worktrees:**
+```bash
+# Create a new worktree with a new branch
+git worktree add ../kaginote-feature-a -b feature-a
+
+# Or create a worktree with an existing branch
+git worktree add ../kaginote-bugfix bugfix-123
+
+# List all worktrees
+git worktree list
+
+# Remove a worktree when done
+git worktree remove ../kaginote-feature-a
+```
+
+**Run Claude Code in each worktree:**
+```bash
+# Navigate to your worktree
+cd ../kaginote-feature-a
+
+# Set up environment for each worktree
+source ~/.cargo/env
+export MACOSX_DEPLOYMENT_TARGET=10.15
+pnpm install
+
+# Run Claude Code in this isolated environment
+claude
+```
+
+**Benefits:**
+- Each worktree has independent file state, perfect for parallel Claude Code sessions
+- Changes in one worktree won't affect others, preventing interference between Claude instances
+- All worktrees share the same Git history and remote connections
+- Long-running tasks can run in one worktree while continuing development in another
+- Use descriptive directory names to identify which task each worktree handles
+
 ## Production Deployment Status (August 2025)
 
 **✅ Fully Implemented and Tested:**

@@ -3,10 +3,15 @@
  * 
  * Real-time audio visualization with waveform display, level meters, 
  * recording indicators, and VAD activity detection.
+ * Updated to use the new design system.
  */
 
 import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import WaveSurfer from 'wavesurfer.js';
+import { cn } from '@/lib/utils';
+import { Icon } from '@/components/ui/Icon';
+import { Badge } from '@/components/ui/Badge';
+import { Button } from '@/components/ui/Button';
 
 export interface AudioData {
   sampleRate: number;
@@ -30,6 +35,7 @@ export interface AudioVisualizerProps {
   showPeakIndicators?: boolean;
   onPlaybackToggle?: (playing: boolean) => void;
   onSeek?: (time: number) => void;
+  className?: string;
 }
 
 interface PeakLevel {
@@ -50,6 +56,7 @@ export const AudioVisualizer: React.FC<AudioVisualizerProps> = ({
   showPeakIndicators = false,
   onPlaybackToggle,
   onSeek,
+  className,
 }) => {
   const waveformRef = useRef<HTMLDivElement>(null);
   const wavesurfer = useRef<WaveSurfer | null>(null);
@@ -357,7 +364,7 @@ export const AudioVisualizer: React.FC<AudioVisualizerProps> = ({
       data-testid="audio-visualizer"
       data-width={width}
       data-height={height}
-      className="audio-visualizer"
+      className={cn("audio-visualizer", className)}
       style={{ position: 'relative' }}
     >
       {/* Recording Indicator */}

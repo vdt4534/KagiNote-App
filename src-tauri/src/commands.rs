@@ -895,6 +895,199 @@ pub async fn emergency_stop_all(
     Ok(format!("Emergency stop completed. Cleared {} sessions and stopped all audio capture.", session_count))
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct TranscribeFileRequest {
+    pub file_path: String,
+    pub config: TranscriptionConfig,
+}
+
+#[tauri::command]
+pub async fn transcribe_audio_file(
+    request: TranscribeFileRequest,
+    state: State<'_, AppState>
+) -> Result<ASRResult, String> {
+
+    tracing::info!("Starting audio file transcription: {}", request.file_path);
+
+    // Validate file exists
+    let file_path = Path::new(&request.file_path);
+    if !file_path.exists() {
+        return Err(format!("Audio file not found: {}", request.file_path));
+    }
+
+    // Read audio file
+    let audio_data = match read_audio_file(&request.file_path).await {
+        Ok(data) => data,
+        Err(e) => return Err(format!("Failed to read audio file: {}", e)),
+    };
+
+    tracing::info!("Audio file loaded: {} samples at {}Hz", audio_data.samples.len(), audio_data.sample_rate);
+
+    // Use configured Whisper engine from app state
+    let mut whisper_guard = state.whisper_engine.lock().await;
+    
+    // Initialize engine if not already present
+    if whisper_guard.is_none() {
+        let whisper_config = WhisperConfig {
+            model_tier: crate::asr::types::ModelTier::from(request.config.quality_tier.as_str()),
+            language: request.config.languages.get(0).cloned(),
+            device: crate::asr::types::Device::Auto,
+            ..Default::default()
+        };
+        
+        let engine = WhisperEngine::new(whisper_config)
+            .await
+            .map_err(|e| format!("Failed to initialize Whisper engine: {}", e))?;
+        *whisper_guard = Some(engine);
+    }
+    
+    let engine = whisper_guard.as_ref().unwrap();
+    let context = TranscriptionContext::default();
+    
+    // Transcribe the audio
+    let result = engine.transcribe(&audio_data, &context)
+        .await
+        .map_err(|e| format!("Failed to transcribe audio: {}", e))?;
+
+    tracing::info!("Transcription completed successfully");
+    Ok(result)
+}
+
+async fn read_audio_file(file_path: &str) -> Result<AudioData, String> {
+    let path = Path::new(file_path);
+    let extension = path.extension()
+        .and_then(|s| s.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+
+    match extension.as_str() {
+        "wav" => read_wav_file(file_path).await,
+        "mp3" | "m4a" | "aac" => {
+            // For now, return an error for unsupported formats
+            // In the future, we could add symphonia or other decoders
+            Err(format!("Audio format '{}' not yet supported. Please use WAV files.", extension))
+        },
+        _ => Err(format!("Unsupported audio format: {}", extension)),
+    }
+}
+
+async fn read_wav_file(file_path: &str) -> Result<AudioData, String> {
+    use tokio::task;
+    
+    let file_path = file_path.to_string();
+    
+    // Run file I/O in a blocking task to avoid blocking the async runtime
+    let audio_data = task::spawn_blocking(move || -> Result<AudioData, String> {
+        use hound::WavReader;
+        use std::io::BufReader;
+        use std::fs::File;
+        
+        let file = File::open(&file_path)
+            .map_err(|e| format!("Failed to open file '{}': {}", file_path, e))?;
+        
+        let mut reader = WavReader::new(BufReader::new(file))
+            .map_err(|e| format!("Failed to read WAV file '{}': {}", file_path, e))?;
+        
+        let spec = reader.spec();
+        
+        // Convert to f32 samples
+        let samples: Vec<f32> = match spec.sample_format {
+            hound::SampleFormat::Float => {
+                reader.samples::<f32>()
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(|e| format!("Failed to read WAV samples: {}", e))?
+            },
+            hound::SampleFormat::Int => {
+                match spec.bits_per_sample {
+                    16 => {
+                        let int_samples: Vec<i16> = reader.samples::<i16>()
+                            .collect::<Result<Vec<_>, _>>()
+                            .map_err(|e| format!("Failed to read 16-bit WAV samples: {}", e))?;
+                        int_samples.into_iter().map(|s| s as f32 / 32768.0).collect()
+                    },
+                    24 => {
+                        let int_samples: Vec<i32> = reader.samples::<i32>()
+                            .collect::<Result<Vec<_>, _>>()
+                            .map_err(|e| format!("Failed to read 24-bit WAV samples: {}", e))?;
+                        int_samples.into_iter().map(|s| s as f32 / 8388608.0).collect()
+                    },
+                    32 => {
+                        let int_samples: Vec<i32> = reader.samples::<i32>()
+                            .collect::<Result<Vec<_>, _>>()
+                            .map_err(|e| format!("Failed to read 32-bit WAV samples: {}", e))?;
+                        int_samples.into_iter().map(|s| s as f32 / 2147483648.0).collect()
+                    },
+                    _ => return Err(format!("Unsupported bit depth: {}", spec.bits_per_sample)),
+                }
+            }
+        };
+        
+        // Convert to mono if stereo
+        let mono_samples = if spec.channels == 1 {
+            samples
+        } else if spec.channels == 2 {
+            // Simple stereo to mono conversion (average channels)
+            samples.chunks(2)
+                .map(|chunk| (chunk[0] + chunk.get(1).unwrap_or(&0.0)) / 2.0)
+                .collect()
+        } else {
+            return Err(format!("Unsupported channel count: {}", spec.channels));
+        };
+        
+        // Resample to 16kHz if needed
+        let target_sample_rate = 16000;
+        let final_samples = if spec.sample_rate != target_sample_rate {
+            resample_audio(&mono_samples, spec.sample_rate, target_sample_rate)?
+        } else {
+            mono_samples
+        };
+        
+        let duration_seconds = final_samples.len() as f32 / target_sample_rate as f32;
+        
+        Ok(AudioData {
+            samples: final_samples,
+            sample_rate: target_sample_rate,
+            channels: 1,
+            timestamp: std::time::SystemTime::now(),
+            source_channel: AudioSource::File,
+            duration_seconds,
+        })
+    }).await
+    .map_err(|e| format!("Task join error: {}", e))??;
+    
+    Ok(audio_data)
+}
+
+fn resample_audio(samples: &[f32], from_rate: u32, to_rate: u32) -> Result<Vec<f32>, String> {
+    if from_rate == to_rate {
+        return Ok(samples.to_vec());
+    }
+    
+    // Simple linear interpolation resampling
+    let ratio = from_rate as f64 / to_rate as f64;
+    let output_len = (samples.len() as f64 / ratio) as usize;
+    let mut output = Vec::with_capacity(output_len);
+    
+    for i in 0..output_len {
+        let src_index = i as f64 * ratio;
+        let src_index_floor = src_index.floor() as usize;
+        let src_index_ceil = (src_index_floor + 1).min(samples.len() - 1);
+        let frac = src_index - src_index_floor as f64;
+        
+        if src_index_floor < samples.len() {
+            let sample = if src_index_ceil < samples.len() {
+                // Linear interpolation
+                samples[src_index_floor] * (1.0 - frac as f32) + samples[src_index_ceil] * frac as f32
+            } else {
+                samples[src_index_floor]
+            };
+            output.push(sample);
+        }
+    }
+    
+    Ok(output)
+}
+
 /// Check if Whisper dependencies are available (placeholder for future feature detection)
 fn check_whisper_availability() -> Result<(), String> {
     // For now, assume whisper-rs is available since it's a direct dependency

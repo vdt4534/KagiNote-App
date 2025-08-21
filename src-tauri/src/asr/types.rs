@@ -152,6 +152,16 @@ pub enum ModelTier {
     Turbo,         // Whisper Large-v3-Turbo - fastest processing
 }
 
+impl From<&str> for ModelTier {
+    fn from(s: &str) -> Self {
+        match s {
+            "high-accuracy" => ModelTier::HighAccuracy,
+            "turbo" => ModelTier::Turbo,
+            _ => ModelTier::Standard,
+        }
+    }
+}
+
 /// Processing device selection
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum Device {

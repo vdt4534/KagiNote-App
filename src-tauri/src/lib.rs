@@ -21,6 +21,7 @@ pub fn run() {
             commands::start_audio_capture,
             commands::stop_audio_capture,
             commands::transcribe_audio,
+            commands::transcribe_audio_file,
             commands::get_audio_devices,
             commands::get_system_info,
             commands::start_transcription,

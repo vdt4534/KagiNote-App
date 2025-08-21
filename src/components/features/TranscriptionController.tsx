@@ -5,7 +5,7 @@
  * real-time updates, and system monitoring.
  */
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, forwardRef, useImperativeHandle } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
 
@@ -88,6 +88,13 @@ export interface TranscriptionControllerProps {
   initialConfig?: Partial<TranscriptionConfig>;
 }
 
+export interface TranscriptionControllerRef {
+  handleStartRecording: () => Promise<void>;
+  handleStopRecording: () => Promise<void>;
+  handleEmergencyStop: () => Promise<void>;
+  isRecording: () => boolean;
+}
+
 const DEFAULT_CONFIG: TranscriptionConfig = {
   qualityTier: 'standard',
   languages: ['en'],
@@ -108,13 +115,13 @@ const AVAILABLE_LANGUAGES = [
   { code: 'de', name: 'German' },
 ];
 
-export const TranscriptionController: React.FC<TranscriptionControllerProps> = ({
+export const TranscriptionController = forwardRef<TranscriptionControllerRef, TranscriptionControllerProps>(({
   onSessionStart,
   onSessionEnd,
   onError,
   onTranscriptionUpdate,
   initialConfig,
-}) => {
+}, ref) => {
   const [config, setConfig] = useState<TranscriptionConfig>({
     ...DEFAULT_CONFIG,
     ...initialConfig,
@@ -128,6 +135,99 @@ export const TranscriptionController: React.FC<TranscriptionControllerProps> = (
   const [validationError, setValidationError] = useState<string>('');
   
   const unlistenRefs = useRef<UnlistenFn[]>([]);
+
+  // Define methods that will be called later
+  const handleStartRecording = async () => {
+    const validation = validateConfiguration();
+    if (validation) {
+      setValidationError(validation);
+      return;
+    }
+
+    setValidationError('');
+    setIsStarting(true);
+    setError(null);
+
+    try {
+      const sessionId = await invoke<string>('start_transcription', {
+        config: config,
+      });
+
+      const session: TranscriptionSession = {
+        sessionId,
+        config: { ...config },
+        startTime: Date.now(),
+        status: 'active',
+      };
+
+      setCurrentSession(session);
+      onSessionStart(sessionId);
+    } catch (err: any) {
+      const error: TranscriptionError = {
+        type: 'transcription_start_failed',
+        message: err.message || 'Failed to start transcription',
+        timestamp: Date.now(),
+      };
+      
+      setError(error);
+      onError(error);
+    } finally {
+      setIsStarting(false);
+    }
+  };
+
+  const handleStopRecording = async () => {
+    if (!currentSession) return;
+
+    setCurrentSession(prev => prev ? { ...prev, status: 'stopping' } : null);
+
+    try {
+      const result = await invoke<FinalTranscriptionResult>('stop_transcription', {
+        sessionId: currentSession.sessionId,
+      });
+
+      onSessionEnd(result);
+      setCurrentSession(null);
+      setLatestTranscription('');
+    } catch (err: any) {
+      const error: TranscriptionError = {
+        type: 'transcription_stop_failed',
+        message: err.message || 'Failed to stop transcription',
+        timestamp: Date.now(),
+        sessionId: currentSession.sessionId,
+      };
+      
+      setError(error);
+      onError(error);
+    }
+  };
+
+  const handleEmergencyStop = async () => {
+    try {
+      await invoke('emergency_stop_all');
+      setCurrentSession(null);
+      setLatestTranscription('');
+      setError(null);
+    } catch (err: any) {
+      const error: TranscriptionError = {
+        type: 'emergency_stop_failed',
+        message: err.message || 'Failed to stop all sessions',
+        timestamp: Date.now(),
+        severity: 'critical',
+      };
+      
+      setError(error);
+      onError(error);
+    }
+  };
+
+  // Expose methods to parent component
+  useImperativeHandle(ref, () => ({
+    handleStartRecording,
+    handleStopRecording,
+    handleEmergencyStop,
+    isRecording: () => currentSession?.status === 'active',
+  }), [currentSession, config]);
 
   // Initialize system capabilities on mount
   useEffect(() => {
@@ -288,84 +388,6 @@ export const TranscriptionController: React.FC<TranscriptionControllerProps> = (
     return '';
   };
 
-  const handleStartRecording = async () => {
-    const validation = validateConfiguration();
-    if (validation) {
-      setValidationError(validation);
-      return;
-    }
-
-    setValidationError('');
-    setIsStarting(true);
-    setError(null);
-
-    try {
-      const sessionId = await invoke<string>('start_transcription', {
-        config: config,
-      });
-
-      const session: TranscriptionSession = {
-        sessionId,
-        config: { ...config },
-        startTime: Date.now(),
-        status: 'active',
-      };
-
-      setCurrentSession(session);
-      setLatestTranscription('');
-      onSessionStart(sessionId);
-    } catch (err: any) {
-      const error: TranscriptionError = {
-        type: err.type || 'transcription_start_failed',
-        message: err.message || 'Failed to start transcription',
-        timestamp: Date.now(),
-        recoveryOptions: err.recoveryOptions,
-      };
-      
-      setError(error);
-      onError(error);
-    } finally {
-      setIsStarting(false);
-    }
-  };
-
-  const handleStopRecording = async () => {
-    if (!currentSession) return;
-
-    setCurrentSession(prev => prev ? { ...prev, status: 'stopping' } : null);
-
-    try {
-      const result = await invoke<FinalTranscriptionResult>('stop_transcription', {
-        sessionId: currentSession.sessionId,
-      });
-
-      onSessionEnd(result);
-      setCurrentSession(null);
-      setLatestTranscription('');
-    } catch (err: any) {
-      const error: TranscriptionError = {
-        type: 'transcription_stop_failed',
-        message: err.message || 'Failed to stop transcription',
-        timestamp: Date.now(),
-        sessionId: currentSession.sessionId,
-      };
-      
-      setError(error);
-      onError(error);
-    }
-  };
-
-  const handleEmergencyStop = async () => {
-    try {
-      const result = await invoke<string>('emergency_stop_all');
-      console.log('Emergency stop result:', result);
-      setCurrentSession(null);
-      setLatestTranscription('');
-      setError(null);
-    } catch (err: any) {
-      console.error('Emergency stop failed:', err);
-    }
-  };
 
   const handleConfigChange = <K extends keyof TranscriptionConfig>(
     key: K,
@@ -1003,6 +1025,8 @@ export const TranscriptionController: React.FC<TranscriptionControllerProps> = (
       `}</style>
     </div>
   );
-};
+});
+
+TranscriptionController.displayName = 'TranscriptionController';
 
 export default TranscriptionController;

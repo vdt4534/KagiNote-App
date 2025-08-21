@@ -1,37 +1,94 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
-import { AudioVisualizer } from "./components/AudioVisualizer";
-import { TranscriptionController, FinalTranscriptionResult, TranscriptionError, TranscriptionUpdateEvent } from "./components/TranscriptionController";
-import "./App.css";
+import { invoke } from '@tauri-apps/api/core';
+import { AppLayout } from "./components/layout/AppLayout";
+import { Dashboard } from "./screens/Dashboard";
+import { NewMeetingModal, MeetingConfig } from "./screens/NewMeetingModal";
+import { RecordingScreen } from "./screens/RecordingScreen";
+import { TranscriptSegment } from "./components/features/TranscriptView";
+import { TranscriptionController, FinalTranscriptionResult, TranscriptionError, TranscriptionUpdateEvent, TranscriptionConfig, TranscriptionControllerRef } from "./components/features/TranscriptionController";
+import { MeetingFile } from "./screens/Dashboard";
+import './styles/globals.css';
+
+type AppScreen = 'dashboard' | 'recording' | 'meeting-review';
 
 interface AppState {
   isAppReady: boolean;
+  currentScreen: AppScreen;
   audioLevel: number;
   isRecording: boolean;
+  isPaused: boolean;
   vadActivity: boolean;
+  recordingDuration: number;
+  currentMeeting: MeetingConfig | null;
+  transcriptSegments: TranscriptSegment[];
   sessionResults: FinalTranscriptionResult[];
   errors: TranscriptionError[];
+  showNewMeetingModal: boolean;
+  meetings: MeetingFile[];
 }
 
 function App() {
+  const transcriptionControllerRef = useRef<TranscriptionControllerRef>(null);
+
   const [appState, setAppState] = useState<AppState>({
     isAppReady: false,
+    currentScreen: 'dashboard',
     audioLevel: 0,
     isRecording: false,
+    isPaused: false,
     vadActivity: false,
+    recordingDuration: 0,
+    currentMeeting: null,
+    transcriptSegments: [],
     sessionResults: [],
     errors: [],
+    showNewMeetingModal: false,
+    meetings: [],
   });
 
-  // Initialize app and mark as ready
+  // Timer for recording duration
+  useEffect(() => {
+    let interval: NodeJS.Timeout;
+    
+    if (appState.isRecording && !appState.isPaused) {
+      interval = setInterval(() => {
+        setAppState(prev => ({ 
+          ...prev, 
+          recordingDuration: prev.recordingDuration + 1 
+        }));
+      }, 1000);
+    }
+    
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [appState.isRecording, appState.isPaused]);
+
+  // Initialize app and load existing meetings
   useEffect(() => {
     const initializeApp = async () => {
       try {
+        // Load existing meetings from localStorage
+        const loadMeetings = () => {
+          try {
+            const imported = JSON.parse(localStorage.getItem('imported-meetings') || '[]');
+            const recorded = JSON.parse(localStorage.getItem('recorded-meetings') || '[]');
+            return [...imported, ...recorded];
+          } catch (error) {
+            console.error('Failed to load meetings from localStorage:', error);
+            return [];
+          }
+        };
+
+        const meetings = loadMeetings();
+        
         // Perform any necessary initialization
-        await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate initialization
-        setAppState(prev => ({ ...prev, isAppReady: true }));
+        await new Promise(resolve => setTimeout(resolve, 500));
+        setAppState(prev => ({ ...prev, isAppReady: true, meetings }));
       } catch (error) {
         console.error('Failed to initialize app:', error);
+        setAppState(prev => ({ ...prev, isAppReady: true }));
       }
     };
 
@@ -69,29 +126,279 @@ function App() {
     };
   }, [appState.isRecording]);
 
+  // Meeting Management Functions
+  const saveMeetingToStorage = (meeting: MeetingFile, type: 'imported' | 'recorded') => {
+    try {
+      const storageKey = `${type}-meetings`;
+      const existing = JSON.parse(localStorage.getItem(storageKey) || '[]');
+      existing.push(meeting);
+      localStorage.setItem(storageKey, JSON.stringify(existing));
+      
+      // Update app state with new meeting
+      setAppState(prev => ({
+        ...prev,
+        meetings: [...prev.meetings, meeting]
+      }));
+    } catch (error) {
+      console.error('Failed to save meeting to localStorage:', error);
+    }
+  };
+
+  const deleteMeetingFromStorage = (meetingId: string) => {
+    try {
+      // Remove from both storage types
+      ['imported-meetings', 'recorded-meetings'].forEach(storageKey => {
+        const existing = JSON.parse(localStorage.getItem(storageKey) || '[]');
+        const filtered = existing.filter((m: any) => m.id !== meetingId);
+        localStorage.setItem(storageKey, JSON.stringify(filtered));
+      });
+      
+      // Update app state
+      setAppState(prev => ({
+        ...prev,
+        meetings: prev.meetings.filter(m => m.id !== meetingId)
+      }));
+    } catch (error) {
+      console.error('Failed to delete meeting from localStorage:', error);
+    }
+  };
+
+  const convertSessionToMeeting = (sessionResult: FinalTranscriptionResult, config: MeetingConfig, duration: number): MeetingFile => {
+    const totalText = sessionResult.segments?.map((s: any) => s.text).join(' ') || '';
+    const averageConfidence = sessionResult.segments?.reduce((acc: number, s: any) => acc + (s.confidence || 0), 0) / (sessionResult.segments?.length || 1) || 0;
+    
+    return {
+      id: `recording-${Date.now()}`,
+      title: config.title,
+      date: new Date(),
+      duration: duration,
+      speakers: sessionResult.segments?.reduce((acc: string[], s: any) => {
+        const speaker = s.speaker || 'Speaker 1';
+        return acc.includes(speaker) ? acc : [...acc, speaker];
+      }, [] as string[]).length || 1,
+      accuracy: Math.round(averageConfidence * 100),
+      language: config.language === 'en' ? 'English' : config.language,
+      quality: config.modelId === 'high-accuracy' ? 'High Accuracy' : 
+               config.modelId === 'turbo' ? 'Turbo' : 'Standard',
+      preview: totalText.substring(0, 100) + (totalText.length > 100 ? '...' : ''),
+    };
+  };
+
+  // App Navigation Handlers
+  const handleNewMeeting = () => {
+    setAppState(prev => ({ ...prev, showNewMeetingModal: true }));
+  };
+
+  const handleStartRecording = async (config: MeetingConfig) => {
+    setAppState(prev => ({
+      ...prev,
+      currentMeeting: config,
+      currentScreen: 'recording',
+      showNewMeetingModal: false,
+      isRecording: true,
+      isPaused: false,
+      recordingDuration: 0,
+      transcriptSegments: [],
+      audioLevel: 0,
+    }));
+
+    // Start actual backend transcription
+    if (transcriptionControllerRef.current?.handleStartRecording) {
+      try {
+        await transcriptionControllerRef.current.handleStartRecording();
+      } catch (error) {
+        console.error('Failed to start transcription:', error);
+        // Revert UI state on error
+        setAppState(prev => ({
+          ...prev,
+          isRecording: false,
+          currentScreen: 'dashboard',
+        }));
+      }
+    }
+  };
+
+  const handleStopRecording = async () => {
+    // Stop actual backend transcription first
+    if (transcriptionControllerRef.current?.handleStopRecording) {
+      try {
+        await transcriptionControllerRef.current.handleStopRecording();
+      } catch (error) {
+        console.error('Failed to stop transcription:', error);
+      }
+    }
+
+    setAppState(prev => ({
+      ...prev,
+      isRecording: false,
+      isPaused: false,
+      audioLevel: 0,
+      vadActivity: false,
+      currentScreen: 'dashboard',
+    }));
+  };
+
+  const handlePauseRecording = () => {
+    setAppState(prev => ({ ...prev, isPaused: true }));
+  };
+
+  const handleResumeRecording = () => {
+    setAppState(prev => ({ ...prev, isPaused: false }));
+  };
+
+  const handleEditSegment = (segmentId: string, newText: string) => {
+    setAppState(prev => ({
+      ...prev,
+      transcriptSegments: prev.transcriptSegments.map(segment =>
+        segment.id === segmentId ? { ...segment, text: newText } : segment
+      )
+    }));
+  };
+
+  const handleImportFile = async () => {
+    try {
+      // Create a file input element
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = '.wav,.mp3,.m4a,.webm';
+      input.style.display = 'none';
+      
+      // Create a promise to handle the file selection
+      const filePromise = new Promise<File | null>((resolve) => {
+        input.onchange = () => {
+          const file = input.files?.[0] || null;
+          resolve(file);
+          document.body.removeChild(input);
+        };
+        input.oncancel = () => {
+          resolve(null);
+          document.body.removeChild(input);
+        };
+      });
+
+      document.body.appendChild(input);
+      input.click();
+      
+      const selectedFile = await filePromise;
+      if (selectedFile) {
+        console.log('Selected file:', selectedFile.name);
+
+        // For now, we'll just show a placeholder since we need the actual file path
+        // In a real implementation, we'd need to save the file to a temporary location
+        alert(`File selected: ${selectedFile.name}. Full file processing will be implemented when the file dialog backend command is added.`);
+        
+        // TODO: This would work with actual file paths from Tauri file dialog
+        const mockFilePath = `/tmp/${selectedFile.name}`;
+        console.log('Mock file path:', mockFilePath);
+
+        // Create transcription config based on current meeting config or defaults
+        const config: TranscriptionConfig = {
+          qualityTier: 'standard',
+          languages: ['en'],
+          enableSpeakerDiarization: true,
+          enableTwoPassRefinement: true,
+          audioSources: {
+            microphone: false,
+            systemAudio: false,
+          },
+          vadThreshold: 0.5,
+        };
+
+        // TODO: Call backend to transcribe the file (when file dialog is implemented)
+        // const transcriptionResult = await invoke('transcribe_audio_file', {
+        //   request: {
+        //     filePath: mockFilePath,
+        //     config: config
+        //   }
+        // });
+
+        // For now, create a mock transcription result
+        const transcriptionResult = {
+          text: `Mock transcription for ${selectedFile.name}. This would contain the actual transcribed text from the audio file.`,
+          confidence: 0.95,
+          language: 'en'
+        };
+
+        console.log('Mock transcription result:', transcriptionResult);
+
+        // Create a meeting record for the imported file
+        const fileName = selectedFile.name.replace(/\.[^/.]+$/, "") || 'Imported Audio';
+        const newSegment: TranscriptSegment = {
+          id: `import-${Date.now()}`,
+          startTime: 0,
+          endTime: 0,
+          speaker: 'Speaker 1',
+          text: (transcriptionResult as any).text || 'Transcription completed',
+          confidence: (transcriptionResult as any).confidence || 0.95,
+        };
+
+        // Add to transcript segments to display
+        setAppState(prev => ({
+          ...prev,
+          transcriptSegments: [newSegment],
+          currentScreen: 'meeting-review', // Switch to show the result
+        }));
+
+        // Save as a meeting in the dashboard format
+        const meetingData: MeetingFile = {
+          id: `import-${Date.now()}`,
+          title: fileName,
+          date: new Date(),
+          duration: 0, // Unknown duration for imported files
+          speakers: 1, // Default to 1 speaker for imported files
+          accuracy: Math.round(((transcriptionResult as any).confidence || 0.95) * 100),
+          language: 'English', // Default language, could be detected
+          quality: 'Standard', // Default quality for imported files
+          preview: (transcriptionResult as any).text?.substring(0, 100) + '...' || 'Transcription completed',
+        };
+        
+        // Save using the new storage function
+        saveMeetingToStorage(meetingData, 'imported');
+
+      }
+    } catch (error) {
+      console.error('Failed to import audio file:', error);
+      // TODO: Show error toast/notification
+      alert(`Failed to import audio file: ${error}`);
+    }
+  };
+
+  // Transcription Event Handlers
   const handleSessionStart = (sessionId: string) => {
     console.log('Transcription session started:', sessionId);
-    setAppState(prev => ({ 
-      ...prev, 
-      isRecording: true,
-      audioLevel: 0 // Start with no audio level, wait for real data
-    }));
   };
 
   const handleSessionEnd = (result: FinalTranscriptionResult) => {
     console.log('Transcription session ended:', result);
+    
+    // Save recording session as a meeting if we have a current meeting config
+    if (appState.currentMeeting) {
+      const meeting = convertSessionToMeeting(result, appState.currentMeeting, appState.recordingDuration);
+      saveMeetingToStorage(meeting, 'recorded');
+    }
+    
     setAppState(prev => ({ 
       ...prev, 
-      isRecording: false,
-      audioLevel: 0,
-      vadActivity: false,
       sessionResults: [...prev.sessionResults, result]
     }));
   };
 
   const handleTranscriptionUpdate = (update: TranscriptionUpdateEvent) => {
     console.log('Transcription update:', update);
-    // Handle real-time transcription updates
+    // Convert update to transcript segment and add to live transcript
+    const newSegment: TranscriptSegment = {
+      id: `${Date.now()}-${Math.random()}`,
+      startTime: 0, // Would come from update
+      endTime: 0, // Would come from update  
+      speaker: 'Speaker 1', // Would come from update
+      text: (update as any).text || 'Live transcription text...',
+      confidence: 0.95 // Would come from update
+    };
+    
+    setAppState(prev => ({
+      ...prev,
+      transcriptSegments: [...prev.transcriptSegments, newSegment]
+    }));
   };
 
   const handleError = (error: TranscriptionError) => {
@@ -103,204 +410,141 @@ function App() {
     }));
   };
 
-  const handlePlaybackToggle = (playing: boolean) => {
-    console.log('Playback toggled:', playing);
+  // Get current screen subtitle
+  const getScreenSubtitle = () => {
+    switch (appState.currentScreen) {
+      case 'recording':
+        return appState.currentMeeting?.title || 'Live Recording';
+      case 'meeting-review':
+        return 'Meeting Review';
+      default:
+        return '100% Local Privacy • No Cloud Required';
+    }
   };
 
-  const handleSeek = (time: number) => {
-    console.log('Seek to time:', time);
+  // Get model info for status bar
+  const getModelInfo = () => {
+    if (appState.currentMeeting) {
+      return {
+        name: appState.currentMeeting.modelId,
+        status: 'ready' as const,
+      };
+    }
+    return {
+      name: 'Standard',
+      status: 'ready' as const,
+    };
+  };
+
+  // Get recording info for status bar
+  const getRecordingInfo = () => {
+    if (appState.isRecording) {
+      return {
+        isRecording: true,
+        duration: `${Math.floor(appState.recordingDuration / 60)}:${(appState.recordingDuration % 60).toString().padStart(2, '0')}`,
+        status: appState.isPaused ? 'Paused' : 'Recording',
+      };
+    }
+    return {
+      isRecording: false,
+      status: 'Ready',
+    };
+  };
+
+  // Render current screen
+  const renderCurrentScreen = () => {
+    switch (appState.currentScreen) {
+      case 'recording':
+        return (
+          <RecordingScreen
+            meetingTitle={appState.currentMeeting?.title}
+            isRecording={appState.isRecording}
+            isPaused={appState.isPaused}
+            duration={appState.recordingDuration}
+            audioLevel={appState.audioLevel}
+            vadActivity={appState.vadActivity}
+            transcriptSegments={appState.transcriptSegments}
+            currentModel={appState.currentMeeting?.modelId}
+            language={appState.currentMeeting?.language}
+            onStart={() => {/* handled by controls */}}
+            onPause={handlePauseRecording}
+            onResume={handleResumeRecording}
+            onStop={handleStopRecording}
+            onEditSegment={handleEditSegment}
+          />
+        );
+      default:
+        return (
+          <Dashboard
+            meetings={appState.meetings}
+            onNewMeeting={handleNewMeeting}
+            onImportFile={handleImportFile}
+            onOpenMeeting={(id) => {
+              console.log('Open meeting', id);
+              // TODO: Implement meeting review screen
+              const meeting = appState.meetings.find(m => m.id === id);
+              if (meeting) {
+                console.log('Opening meeting:', meeting.title);
+                // Could switch to meeting-review screen here
+              }
+            }}
+            onDeleteMeeting={(id) => {
+              console.log('Delete meeting', id);
+              deleteMeetingFromStorage(id);
+            }}
+            onSearch={(query) => console.log('Search', query)}
+          />
+        );
+    }
   };
 
   if (!appState.isAppReady) {
     return (
-      <div className="flex flex-col items-center justify-center h-screen bg-gray-50 gap-5">
-        <div className="text-xl font-semibold text-gray-700">Loading KagiNote...</div>
-        <div data-testid="system-check-running" className="text-gray-500">Checking system requirements...</div>
-      </div>
+      <AppLayout loading={true} title="KagiNote" subtitle="Initializing...">
+        <div />
+      </AppLayout>
     );
   }
 
   return (
-    <main className="container" data-testid="app-ready">
-      <header className="app-header">
-        <h1>KagiNote</h1>
-        <p>Privacy-focused meeting transcription</p>
-      </header>
+    <>
+      <AppLayout
+        title="KagiNote"
+        subtitle={getScreenSubtitle()}
+        modelInfo={getModelInfo()}
+        recordingInfo={getRecordingInfo()}
+        systemInfo={{ privacy: true, cpu: '15%', memory: '2.1GB' }}
+      >
+        {renderCurrentScreen()}
+      </AppLayout>
 
-      <div className="app-layout">
-        {/* Audio Visualization Section */}
-        <section className="audio-section">
-          <h2>Audio Input</h2>
-          <AudioVisualizer
-            audioLevel={appState.audioLevel}
-            isRecording={appState.isRecording}
-            vadActivity={appState.vadActivity}
-            showWaveform={false} // Start with level meters, can be toggled
-            height={100}
-            width={800}
-            showPeakIndicators={true}
-            onPlaybackToggle={handlePlaybackToggle}
-            onSeek={handleSeek}
-          />
-        </section>
+      {/* New Meeting Modal */}
+      <NewMeetingModal
+        isOpen={appState.showNewMeetingModal}
+        onClose={() => setAppState(prev => ({ ...prev, showNewMeetingModal: false }))}
+        onStartRecording={handleStartRecording}
+      />
 
-        {/* Transcription Control Section */}
-        <section className="transcription-section">
-          <TranscriptionController
-            onSessionStart={handleSessionStart}
-            onSessionEnd={handleSessionEnd}
-            onError={handleError}
-            onTranscriptionUpdate={handleTranscriptionUpdate}
-            initialConfig={{
-              qualityTier: 'standard',
-              languages: ['en'],
-              enableSpeakerDiarization: true,
-              enableTwoPassRefinement: true,
-            }}
-          />
-        </section>
-
-        {/* Results Section */}
-        {appState.sessionResults.length > 0 && (
-          <section className="results-section">
-            <h2>Session Results</h2>
-            {appState.sessionResults.map((result, index) => (
-              <div key={result.sessionId} className="session-result">
-                <h3>Session {index + 1}</h3>
-                <div>Duration: {result.totalDuration}s</div>
-                <div>Segments: {result.segments.length}</div>
-                <div>Processing Time: {result.processingTimeMs}ms</div>
-              </div>
-            ))}
-          </section>
-        )}
-
-        {/* Error Display */}
-        {appState.errors.length > 0 && (
-          <section className="errors-section">
-            <h2>System Messages</h2>
-            {appState.errors.slice(-3).map((error, index) => (
-              <div key={index} className={`error-item ${error.severity || 'error'}`}>
-                <strong>{error.type}:</strong> {error.message}
-              </div>
-            ))}
-          </section>
-        )}
-      </div>
-
-      <style>{`
-        .loading-container {
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          justify-content: center;
-          height: 100vh;
-          gap: 20px;
-        }
-
-        .app-header {
-          text-align: center;
-          margin-bottom: 30px;
-          padding: 20px;
-          border-bottom: 1px solid #e1e5e9;
-        }
-
-        .app-header h1 {
-          color: #1a1a1a;
-          margin: 0;
-          font-size: 2.5rem;
-        }
-
-        .app-header p {
-          color: #666;
-          margin: 10px 0 0 0;
-          font-size: 1.1rem;
-        }
-
-        .app-layout {
-          display: flex;
-          flex-direction: column;
-          gap: 30px;
-          max-width: 1200px;
-          margin: 0 auto;
-          padding: 0 20px;
-        }
-
-        .audio-section,
-        .transcription-section,
-        .results-section,
-        .errors-section {
-          background: white;
-          border-radius: 8px;
-          box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-          padding: 20px;
-        }
-
-        .audio-section h2,
-        .transcription-section h2,
-        .results-section h2,
-        .errors-section h2 {
-          margin: 0 0 20px 0;
-          color: #1a1a1a;
-          border-bottom: 2px solid #3b82f6;
-          padding-bottom: 8px;
-        }
-
-        .session-result {
-          padding: 15px;
-          background: #f8f9fa;
-          border-radius: 4px;
-          margin-bottom: 10px;
-        }
-
-        .session-result h3 {
-          margin: 0 0 10px 0;
-          color: #1a1a1a;
-        }
-
-        .session-result div {
-          margin: 5px 0;
-          color: #666;
-        }
-
-        .error-item {
-          padding: 10px;
-          margin: 5px 0;
-          border-radius: 4px;
-          border-left: 4px solid;
-        }
-
-        .error-item.error {
-          background: #ffebee;
-          border-color: #c62828;
-          color: #c62828;
-        }
-
-        .error-item.warning {
-          background: #fff3e0;
-          border-color: #ef6c00;
-          color: #ef6c00;
-        }
-
-        .error-item.critical {
-          background: #ffcdd2;
-          border-color: #d32f2f;
-          color: #d32f2f;
-          font-weight: bold;
-        }
-
-        @media (max-width: 768px) {
-          .app-layout {
-            padding: 0 15px;
-            gap: 20px;
-          }
-
-          .app-header h1 {
-            font-size: 2rem;
-          }
-        }
-      `}</style>
-    </main>
+      {/* TranscriptionController for backend integration */}
+      <TranscriptionController
+        ref={transcriptionControllerRef}
+        onSessionStart={handleSessionStart}
+        onSessionEnd={handleSessionEnd}
+        onError={handleError}
+        onTranscriptionUpdate={handleTranscriptionUpdate}
+        initialConfig={{
+          qualityTier: appState.currentMeeting?.modelId as 'standard' | 'high-accuracy' | 'turbo' || 'standard',
+          languages: [appState.currentMeeting?.language || 'en'],
+          enableSpeakerDiarization: true,
+          enableTwoPassRefinement: true,
+          audioSources: {
+            microphone: true,
+            systemAudio: false,
+          },
+          vadThreshold: 0.5,
+        }}
+      />
+    </>
   );
 }
 
