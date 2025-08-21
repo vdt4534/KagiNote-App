@@ -34,6 +34,24 @@ npm run tauri dev    # Start Tauri dev mode (auto-launches app)
 npm run tauri build  # Build production app bundle
 ```
 
+**Testing:**
+```bash
+npm run test         # Run frontend unit tests with Vitest
+npm run test:ui      # Run tests with UI reporter
+npm run test:coverage # Run tests with coverage report
+npm run test:e2e     # Run E2E tests with Playwright
+npm run test:e2e:ui  # Run E2E tests with Playwright UI
+
+# Run backend tests
+cargo test --manifest-path src-tauri/Cargo.toml
+
+# Run specific test
+cargo test test_name --manifest-path src-tauri/Cargo.toml
+
+# Run benchmarks
+cargo bench --manifest-path src-tauri/Cargo.toml
+```
+
 **Package Management:**
 ```bash
 pnpm install         # Install dependencies (uses pnpm)
@@ -111,44 +129,18 @@ The app is designed for audio capture and processing with universal device compa
 - `src-tauri/src/lib.rs` - App initialization with proper cleanup handlers
 
 **Frontend Components:**
-- `src/components/AudioVisualizer.tsx` - Real-time audio visualization connected to backend audio levels
-- `src/components/TranscriptionController.tsx` - Complete session management with model status feedback
-- `src/App.tsx` - Main application with real transcription event handling and display
+- `src/components/ui/` - Reusable UI primitives (Button, Card, Badge, Input, Modal, Icon)
+- `src/components/features/` - Feature-specific components (AudioVisualizer, TranscriptionController, TranscriptView)
+- `src/components/layout/` - Layout components (AppLayout, TitleBar, Sidebar, StatusBar)
+- `src/screens/` - Full screen views (Dashboard, RecordingScreen, NewMeetingModal)
+- `src/hooks/` - Custom React hooks (usePlatform for OS detection)
+- `src/lib/` - Utility functions and helpers
 
 **Test Infrastructure:**
-- `src-tauri/tests/` - Comprehensive Rust backend tests (89 tests)
-- `tests/frontend/` - React component tests (43 tests)
-- `tests/e2e/` - End-to-end user workflow tests
+- `src-tauri/tests/` - Comprehensive Rust backend tests
+- `tests/frontend/` - React component tests (Vitest)
+- `tests/e2e/` - End-to-end user workflow tests (Playwright)
 - `src-tauri/benches/` - Performance benchmarks for all model tiers
-
-## Development Commands
-
-**Testing:**
-```bash
-# Run backend tests
-cargo test --manifest-path src-tauri/Cargo.toml
-
-# Run frontend tests  
-npm run test
-
-# Run E2E tests
-npm run test:e2e
-
-# Run performance benchmarks
-cargo bench --manifest-path src-tauri/Cargo.toml
-```
-
-**Performance Validation:**
-```bash
-# Check real-time factor performance
-cargo test --release test_asr_performance
-
-# Memory usage profiling
-cargo test --release test_memory_usage
-
-# Complete pipeline benchmarks  
-cargo bench pipeline_benchmark
-```
 
 ## Privacy & Security Features
 
@@ -185,14 +177,6 @@ cargo bench pipeline_benchmark
 - **Mixed-language meetings** supported in multilingual mode
 
 ## V2 Architecture (August 2025)
-
-**Component Architecture:**
-- `src/components/ui/` - Reusable UI primitives (Button, Card, Badge, Input, Modal, Icon)
-- `src/components/features/` - Feature-specific components (AudioVisualizer, TranscriptionController, TranscriptView)
-- `src/components/layout/` - Layout components (AppLayout, TitleBar, Sidebar, StatusBar)
-- `src/screens/` - Full screen views (Dashboard, RecordingScreen, NewMeetingModal)
-- `src/hooks/` - Custom React hooks (usePlatform for OS detection)
-- `src/lib/` - Utility functions and helpers
 
 **Key V2 Features:**
 - **Dashboard with Real Data**: Meeting list with localStorage persistence, search, and sorting
