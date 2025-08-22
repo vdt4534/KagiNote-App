@@ -536,10 +536,212 @@ export class SpeakerTestFactory {
     const isSpeech = syllablePhase < 0.7;
     return isSpeech ? Math.sin(Math.PI * syllablePhase / 0.7) : 0;
   }
+
+  /**
+   * Creates ONNX model validation test data
+   * Tests that bundled models can be loaded and provide valid outputs
+   */
+  static createONNXModelValidationScenario(): MultiSpeakerScenario {
+    const speakers = [
+      this.createSpeakerProfile('speaker_1', 'Model Test Voice A', {
+        pitch: 190,
+        formantF1: 760,
+        formantF2: 1160,
+        speakingRate: 150
+      }),
+      this.createSpeakerProfile('speaker_2', 'Model Test Voice B', {
+        pitch: 155,
+        formantF1: 620,
+        formantF2: 1020,
+        speakingRate: 145
+      })
+    ];
+
+    const segments = [
+      { startTime: 0, endTime: 3, speakerId: 'speaker_1', confidence: 0.88, text: 'Testing model loading and inference' },
+      { startTime: 4, endTime: 7, speakerId: 'speaker_2', confidence: 0.85, text: 'Validating ONNX model outputs' },
+      { startTime: 8, endTime: 11, speakerId: 'speaker_1', confidence: 0.90, text: 'Models should produce valid embeddings' },
+    ];
+
+    return {
+      audio: this.generateMultiSpeakerAudio(segments, speakers),
+      groundTruth: {
+        speakers,
+        segments,
+        speakerChanges: 3,
+        avgSegmentLength: 3.0
+      },
+      complexity: 'simple',
+      expectedProcessingTime: 3000 // 3 seconds for model loading validation
+    };
+  }
+
+  /**
+   * Creates memory pressure test scenario
+   * Tests diarization behavior under memory constraints
+   */
+  static createMemoryPressureScenario(): MultiSpeakerScenario {
+    const speakers = Array.from({ length: 6 }, (_, i) => 
+      this.createSpeakerProfile(`speaker_${i + 1}`, `Memory Test ${i + 1}`, {
+        pitch: 130 + (i * 25),
+        formantF1: 550 + (i * 60),
+        formantF2: 1050 + (i * 60),
+        speakingRate: 135 + (i * 8)
+      })
+    );
+
+    // Create many short segments to stress memory allocation
+    const segments = Array.from({ length: 200 }, (_, i) => ({
+      startTime: i * 1.5,
+      endTime: (i * 1.5) + 1.2,
+      speakerId: `speaker_${(i % 6) + 1}`,
+      confidence: 0.75 + (Math.random() * 0.2),
+      text: `Memory test segment ${i + 1}`
+    }));
+
+    return {
+      audio: this.generateMultiSpeakerAudio(segments, speakers),
+      groundTruth: {
+        speakers,
+        segments,
+        speakerChanges: 200,
+        avgSegmentLength: 1.2
+      },
+      complexity: 'extreme',
+      expectedProcessingTime: 45000 // 45 seconds for 300 seconds of dense audio
+    };
+  }
+
+  /**
+   * Creates concurrent session test data
+   * Tests handling multiple simultaneous diarization sessions
+   */
+  static createConcurrentSessionsScenario(): MultiSpeakerScenario[] {
+    return Array.from({ length: 5 }, (_, sessionIndex) => {
+      const speakers = [
+        this.createSpeakerProfile(`session${sessionIndex}_speaker_1`, `Session ${sessionIndex} Person A`, {
+          pitch: 160 + (sessionIndex * 10),
+          formantF1: 700 + (sessionIndex * 30),
+          formantF2: 1100 + (sessionIndex * 30),
+          speakingRate: 145 + (sessionIndex * 5)
+        }),
+        this.createSpeakerProfile(`session${sessionIndex}_speaker_2`, `Session ${sessionIndex} Person B`, {
+          pitch: 190 + (sessionIndex * 12),
+          formantF1: 750 + (sessionIndex * 35),
+          formantF2: 1150 + (sessionIndex * 35),
+          speakingRate: 150 + (sessionIndex * 5)
+        })
+      ];
+
+      const segments = [
+        { startTime: 0, endTime: 5, speakerId: `session${sessionIndex}_speaker_1`, confidence: 0.87, text: `Session ${sessionIndex} conversation start` },
+        { startTime: 6, endTime: 11, speakerId: `session${sessionIndex}_speaker_2`, confidence: 0.84, text: `Session ${sessionIndex} response` },
+        { startTime: 12, endTime: 17, speakerId: `session${sessionIndex}_speaker_1`, confidence: 0.89, text: `Session ${sessionIndex} continuation` },
+      ];
+
+      return {
+        audio: this.generateMultiSpeakerAudio(segments, speakers),
+        groundTruth: {
+          speakers,
+          segments,
+          speakerChanges: 3,
+          avgSegmentLength: 5.0
+        },
+        complexity: 'medium',
+        expectedProcessingTime: 8000 // 8 seconds per session
+      };
+    });
+  }
+
+  /**
+   * Creates error recovery test scenario
+   * Tests graceful handling of various error conditions
+   */
+  static createErrorRecoveryScenario(): {
+    corruptedAudio: MultiSpeakerScenario;
+    insufficientAudio: MultiSpeakerScenario;
+    invalidConfig: MultiSpeakerScenario;
+  } {
+    const baseSpeaker = this.createSpeakerProfile('error_test_speaker', 'Error Test Voice', {
+      pitch: 175,
+      formantF1: 725,
+      formantF2: 1125,
+      speakingRate: 148
+    });
+
+    return {
+      corruptedAudio: {
+        audio: this.generateCorruptedAudio(10.0), // 10 seconds of corrupted audio
+        groundTruth: {
+          speakers: [baseSpeaker],
+          segments: [],
+          speakerChanges: 0,
+          avgSegmentLength: 0
+        },
+        complexity: 'extreme',
+        expectedProcessingTime: -1 // Should fail gracefully
+      },
+
+      insufficientAudio: {
+        audio: this.generateMultiSpeakerAudio(
+          [{ startTime: 0, endTime: 0.3, speakerId: 'error_test_speaker', confidence: 0.4, text: 'Too short' }],
+          [baseSpeaker]
+        ),
+        groundTruth: {
+          speakers: [baseSpeaker],
+          segments: [],
+          speakerChanges: 0,
+          avgSegmentLength: 0.3
+        },
+        complexity: 'simple',
+        expectedProcessingTime: -1 // Should fail due to insufficient audio
+      },
+
+      invalidConfig: {
+        audio: this.generateMultiSpeakerAudio(
+          [{ startTime: 0, endTime: 5, speakerId: 'error_test_speaker', confidence: 0.8, text: 'Valid audio but invalid config' }],
+          [baseSpeaker]
+        ),
+        groundTruth: {
+          speakers: [baseSpeaker],
+          segments: [],
+          speakerChanges: 0,
+          avgSegmentLength: 5.0
+        },
+        complexity: 'simple',
+        expectedProcessingTime: -1 // Should fail due to invalid configuration
+      }
+    };
+  }
+
+  private static generateCorruptedAudio(duration: number): AudioData {
+    const sampleRate = 16000;
+    const totalSamples = Math.floor(duration * sampleRate);
+    const samples = new Float32Array(totalSamples);
+    
+    // Generate corrupted audio with NaN and Infinity values
+    for (let i = 0; i < samples.length; i++) {
+      if (Math.random() < 0.1) {
+        samples[i] = Math.random() < 0.5 ? NaN : Infinity;
+      } else {
+        samples[i] = (Math.random() - 0.5) * 2; // Normal audio
+      }
+    }
+    
+    return {
+      sampleRate,
+      channels: 1,
+      samples,
+      timestamp: Date.now(),
+      sourceChannel: 'corrupted',
+      durationSeconds: duration
+    };
+  }
 }
 
 /**
  * Performance test scenarios for speaker diarization
+ * These define the acceptance criteria that implementation must meet
  */
 export const SpeakerDiarizationPerformanceScenarios = {
   realTimeProcessing: {
@@ -575,5 +777,33 @@ export const SpeakerDiarizationPerformanceScenarios = {
     target: 0.95,
     testData: () => SpeakerTestFactory.createSpeakerReidentificationScenario(),
     measure: 'speaker_consistency'
+  },
+
+  onnxModelPerformance: {
+    description: 'Load and run ONNX models within performance targets',
+    target: 3000, // 3 seconds max for model operations
+    testData: () => SpeakerTestFactory.createONNXModelValidationScenario(),
+    measure: 'model_loading_and_inference_time'
+  },
+
+  memoryEfficiency: {
+    description: 'Handle memory pressure without crashes or excessive usage',
+    target: 500, // 500MB max memory usage
+    testData: () => SpeakerTestFactory.createMemoryPressureScenario(),
+    measure: 'peak_memory_usage_mb'
+  },
+
+  concurrentSessions: {
+    description: 'Handle 5 concurrent diarization sessions successfully',
+    target: 5, // Number of successful concurrent sessions
+    testData: () => SpeakerTestFactory.createConcurrentSessionsScenario(),
+    measure: 'successful_concurrent_sessions'
+  },
+
+  errorRecovery: {
+    description: 'Gracefully handle and recover from various error conditions',
+    target: 1.0, // 100% error recovery (no crashes)
+    testData: () => SpeakerTestFactory.createErrorRecoveryScenario(),
+    measure: 'error_recovery_success_rate'
   }
 };

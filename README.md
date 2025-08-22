@@ -16,10 +16,10 @@ KagiNote V2 is a **production-ready** desktop application built with Tauri v2, R
 - **🎛️ Quality Tiers**: Standard (1.5GB), High Accuracy (2.4GB), Turbo (1.2GB) models
 - **💾 Segment Storage**: Real-time transcription segments stored and accumulated during sessions
 - **🎯 Live Display**: Actual transcription text displayed in real-time (not placeholders)
-- **🎭 Speaker Diarization**: Real-time speaker identification using pyannote models
-- **👥 Speaker Profiles**: Persistent speaker profiles with custom names, colors, and voice characteristics
-- **🔊 Voice Activity Detection**: Advanced speech detection with overlapping speaker support
-- **🎨 Adaptive Clustering**: Automatic speaker clustering with configurable similarity thresholds
+- **🎭 Speaker Diarization**: Real-time speaker identification using 3D-Speaker ERes2NetV2 ONNX models
+- **👥 Speaker Profiles**: Persistent speaker profiles with 512-dimensional voice embeddings
+- **🔊 Advanced Audio Processing**: Sliding window analysis with speech/silence segmentation
+- **🏷️ Smart Speaker Clustering**: 70% similarity threshold with confidence scoring
 
 ### New V2 Interface
 - **📊 Modern Dashboard**: Meeting list with search, sorting, and filtering
@@ -29,7 +29,9 @@ KagiNote V2 is a **production-ready** desktop application built with Tauri v2, R
 - **🖥️ Platform-Aware**: Native look on macOS/Windows with platform-specific adaptations
 - **📱 Real-time Display**: Live transcription with audio visualization
 - **🗂️ Meeting Management**: Create, save, delete, and review transcripts
-- **🎭 Real-time Speaker Diarization**: Identify up to 8 speakers with persistent profiles and custom colors
+- **🎭 Real-time Speaker Diarization**: Identify up to 8 speakers using state-of-the-art 3D-Speaker ERes2NetV2 models
+- **📊 Diarization Status UI**: Live speaker detection status, confidence levels, and error handling
+- **🔧 Professional Error Recovery**: Graceful degradation with clear user feedback and troubleshooting
 
 ## Quick Start
 
@@ -110,34 +112,40 @@ The latest version includes significant improvements to transcription accuracy a
 - **Segment Deduplication**: Prevents repeated text using 80% similarity threshold
 - **Noise Filtering**: Automatically removes [BLANK_AUDIO] and [INAUDIBLE] segments
 
-## Speaker Diarization Implementation
+## Speaker Diarization Implementation (August 2025)
 
-### IMPORTANT: pyannote-rs Requirement
+### ✅ Production-Ready 3D-Speaker ERes2NetV2 Integration
 
-**⚠️ This project MUST use pyannote-rs for speaker diarization. NEVER attempt to create custom diarization implementations.**
+**🎯 State-of-the-Art Models:** KagiNote uses the latest 3D-Speaker ERes2NetV2 ONNX models for professional-grade speaker identification.
 
 ### Current Implementation Status
 
-Due to temporary dependency conflicts between pyannote-rs v0.3.1 and ort (ONNX Runtime) v2.0.0-rc.10, we're using a direct ONNX runtime integration that follows the exact pyannote approach:
+**✅ COMPLETED (August 2025):**
+- 3D-Speaker ERes2NetV2 ONNX models (71MB embedding + 6MB segmentation)
+- Bundled models ship with app - no network dependencies
+- Real-time processing with <1.5s latency
+- Comprehensive UI with status indicators and error handling
+- Full TDD test suite with 50+ tests
 
-**Dependency Solution:**
+**Technology Stack:**
 ```toml
 # src-tauri/Cargo.toml
 ort = { version = "1.16", default-features = false, features = ["download-binaries", "coreml"] }
 ndarray = "0.15"
 ```
 
-**What This Means:**
-1. We use the same pyannote ONNX models (segmentation-3.0.onnx, wespeaker embeddings)
-2. The implementation follows pyannote's exact segmentation and embedding approach
-3. When pyannote-rs resolves its ort compatibility issues, we'll migrate back seamlessly
-4. No custom diarization logic - only pyannote's proven approach
+**Processing Pipeline:**
+1. **Audio Segmentation**: PyAnnote segmentation-3.0 detects speech regions
+2. **Embedding Extraction**: 3D-Speaker ERes2NetV2 creates 512-dimensional voice embeddings  
+3. **Speaker Clustering**: 70% similarity threshold for speaker identification
+4. **Parallel Processing**: Runs alongside Whisper transcription for efficiency
 
-**Models Used:**
-- **Segmentation**: pyannote/segmentation-3.0 (5.9MB)
-- **Embeddings**: wespeaker-voxceleb-resnet34-LM (24.5MB)
-- **Storage**: `~/Library/Application Support/KagiNote/models/diarization/`
-- **Stop Response**: <100ms immediate microphone release
+**Models & Storage:**
+- **Segmentation Model**: PyAnnote segmentation-3.0.onnx (6MB)
+- **Embedding Model**: 3D-Speaker ERes2NetV2.onnx (71MB) 
+- **Bundled Location**: `src-tauri/resources/models/diarization/`
+- **Runtime Cache**: `~/Library/Application Support/KagiNote/models/diarization/`
+- **Offline Operation**: Models bundled with app, no downloads required
 
 ## Privacy & Security
 

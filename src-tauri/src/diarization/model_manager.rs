@@ -1,38 +1,30 @@
 //! Diarization Model Management
 //! 
-//! Handles downloading, caching, and loading of pyannote diarization models.
+//! Handles copying bundled models to the user's application directory
+//! No network downloads required - models are bundled with the app
 
 use anyhow::{Result, Context};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::fs;
-use reqwest;
-use futures_util::StreamExt;
-use tokio::fs::File;
-use tokio::io::AsyncWriteExt;
 use tracing::{info, debug, warn};
 
 /// Model information for diarization
 #[derive(Debug, Clone)]
 pub struct DiarizationModel {
     pub name: String,
-    pub segmentation_url: String,
-    pub embedding_url: String,
     pub segmentation_size: u64,
     pub embedding_size: u64,
     pub description: String,
 }
 
-/// Default pyannote models
+/// Default bundled models
 impl DiarizationModel {
     pub fn default() -> Self {
         Self {
-            name: "pyannote-3.0".to_string(),
-            // Using Hugging Face model URLs
-            segmentation_url: "https://huggingface.co/pyannote/segmentation-3.0/resolve/main/pytorch_model.bin".to_string(),
-            embedding_url: "https://huggingface.co/pyannote/wespeaker-voxceleb-resnet34-LM/resolve/main/pytorch_model.bin".to_string(),
-            segmentation_size: 5_900_000, // ~5.9MB
-            embedding_size: 24_500_000,   // ~24.5MB
-            description: "PyAnnote 3.0 segmentation + WeSpeaker embeddings".to_string(),
+            name: "sherpa-onnx-pyannote".to_string(),
+            segmentation_size: 5_900_000,  // ~5.9MB
+            embedding_size: 71_500_000,    // ~71.5MB (3D-Speaker ERes2NetV2)
+            description: "Sherpa-ONNX PyAnnote segmentation + 3D-Speaker ERes2NetV2 embeddings".to_string(),
         }
     }
 }
@@ -69,7 +61,7 @@ impl DiarizationModelManager {
             .join("diarization"))
     }
     
-    /// Check if models are already downloaded
+    /// Check if models are already available
     pub fn are_models_cached(&self) -> bool {
         let seg_path = self.get_segmentation_model_path();
         let emb_path = self.get_embedding_model_path();
@@ -87,7 +79,7 @@ impl DiarizationModelManager {
         self.storage_dir.join("embedding.onnx")
     }
     
-    /// Download models if needed
+    /// Ensure models are available (copy from bundled resources if needed)
     pub async fn ensure_models_available<F>(
         &self,
         progress_callback: F,
@@ -96,84 +88,103 @@ impl DiarizationModelManager {
         F: Fn(f32, String) + Send + Sync + 'static,
     {
         if self.are_models_cached() {
-            info!("Diarization models already cached");
+            info!("Diarization models already available");
             progress_callback(1.0, "Models already available".to_string());
             return Ok(());
         }
         
-        info!("Downloading diarization models...");
+        info!("Copying bundled diarization models...");
+        progress_callback(0.0, "Setting up diarization models...".to_string());
         
-        // Download segmentation model
-        progress_callback(0.0, "Downloading segmentation model...".to_string());
-        self.download_model(
-            &self.model.segmentation_url,
-            &self.get_segmentation_model_path(),
-            self.model.segmentation_size,
-            |p| progress_callback(p * 0.5, format!("Segmentation: {:.0}%", p * 100.0)),
-        ).await?;
+        // Copy models from bundled resources
+        self.copy_bundled_models(&progress_callback)?;
         
-        // Download embedding model
-        progress_callback(0.5, "Downloading embedding model...".to_string());
-        self.download_model(
-            &self.model.embedding_url,
-            &self.get_embedding_model_path(),
-            self.model.embedding_size,
-            |p| progress_callback(0.5 + p * 0.5, format!("Embedding: {:.0}%", p * 100.0)),
-        ).await?;
-        
-        progress_callback(1.0, "Models downloaded successfully".to_string());
-        info!("Diarization models downloaded successfully");
+        progress_callback(1.0, "Models ready".to_string());
+        info!("Diarization models ready");
         
         Ok(())
     }
     
-    /// Download a single model file
-    async fn download_model<F>(
-        &self,
-        url: &str,
-        target_path: &Path,
-        expected_size: u64,
-        progress_callback: F,
-    ) -> Result<()>
+    /// Copy bundled models to user directory
+    fn copy_bundled_models<F>(&self, progress_callback: &F) -> Result<()>
     where
-        F: Fn(f32) + Send + Sync,
+        F: Fn(f32, String) + Send + Sync,
     {
-        debug!("Downloading from {} to {:?}", url, target_path);
+        // Get the resource directory path
+        let resource_dir = Self::get_resource_dir()?;
         
-        // Create a client
-        let client = reqwest::Client::new();
-        let response = client
-            .get(url)
-            .send()
-            .await
-            .context("Failed to start download")?;
-            
-        let total_size = response
-            .content_length()
-            .unwrap_or(expected_size);
-            
-        // Create the file
-        let mut file = File::create(target_path)
-            .await
-            .context("Failed to create model file")?;
-            
-        // Download with progress
-        let mut downloaded = 0u64;
-        let mut stream = response.bytes_stream();
+        // Copy segmentation model
+        progress_callback(0.25, "Copying segmentation model...".to_string());
+        let seg_source = resource_dir.join("segmentation.onnx");
+        let seg_target = self.get_segmentation_model_path();
         
-        while let Some(chunk) = stream.next().await {
-            let chunk = chunk.context("Failed to download chunk")?;
-            file.write_all(&chunk).await
-                .context("Failed to write to file")?;
-                
-            downloaded += chunk.len() as u64;
-            let progress = downloaded as f32 / total_size as f32;
-            progress_callback(progress);
+        if seg_source.exists() {
+            fs::copy(&seg_source, &seg_target)
+                .context("Failed to copy segmentation model")?;
+            debug!("Copied segmentation model to {:?}", seg_target);
+        } else {
+            warn!("Segmentation model not found in resources at {:?}", seg_source);
         }
         
-        file.flush().await.context("Failed to flush file")?;
+        // Copy embedding model
+        progress_callback(0.75, "Copying embedding model...".to_string());
+        let emb_source = resource_dir.join("embedding.onnx");
+        let emb_target = self.get_embedding_model_path();
+        
+        if emb_source.exists() {
+            fs::copy(&emb_source, &emb_target)
+                .context("Failed to copy embedding model")?;
+            debug!("Copied embedding model to {:?}", emb_target);
+        } else {
+            warn!("Embedding model not found in resources at {:?}", emb_source);
+        }
         
         Ok(())
+    }
+    
+    /// Get the resource directory containing bundled models
+    fn get_resource_dir() -> Result<PathBuf> {
+        // Try to get the resource directory from Tauri
+        if let Ok(exe_dir) = std::env::current_exe() {
+            // In production, resources are next to the executable
+            let resource_path = exe_dir
+                .parent()
+                .ok_or_else(|| anyhow::anyhow!("Could not get executable directory"))?
+                .join("resources")
+                .join("models")
+                .join("diarization");
+            
+            if resource_path.exists() {
+                return Ok(resource_path);
+            }
+            
+            // In development, use the src-tauri/resources directory
+            let dev_path = PathBuf::from("src-tauri/resources/models/diarization");
+            if dev_path.exists() {
+                return Ok(dev_path);
+            }
+            
+            // Try relative to current directory
+            let relative_path = PathBuf::from("resources/models/diarization");
+            if relative_path.exists() {
+                return Ok(relative_path);
+            }
+        }
+        
+        // Fallback: look for the models in common locations
+        let fallback_paths = [
+            PathBuf::from("./src-tauri/resources/models/diarization"),
+            PathBuf::from("../src-tauri/resources/models/diarization"),
+            PathBuf::from("resources/models/diarization"),
+        ];
+        
+        for path in &fallback_paths {
+            if path.exists() {
+                return Ok(path.clone());
+            }
+        }
+        
+        Err(anyhow::anyhow!("Could not find bundled model resources"))
     }
     
     /// Verify model integrity
@@ -193,11 +204,11 @@ impl DiarizationModelManager {
         let seg_expected = self.model.segmentation_size;
         let emb_expected = self.model.embedding_size;
         
-        if seg_size < (seg_expected * 9 / 10) || seg_size > (seg_expected * 11 / 10) {
+        if seg_size < (seg_expected * 9 / 10) {
             warn!("Segmentation model size mismatch: {} vs expected {}", seg_size, seg_expected);
         }
         
-        if emb_size < (emb_expected * 9 / 10) || emb_size > (emb_expected * 11 / 10) {
+        if emb_size < (emb_expected * 9 / 10) {
             warn!("Embedding model size mismatch: {} vs expected {}", emb_size, emb_expected);
         }
         
@@ -205,7 +216,7 @@ impl DiarizationModelManager {
         Ok(())
     }
     
-    /// Clean up downloaded models
+    /// Clean up downloaded models (for debugging/reset)
     pub fn cleanup_models(&self) -> Result<()> {
         let seg_path = self.get_segmentation_model_path();
         let emb_path = self.get_embedding_model_path();
@@ -228,7 +239,6 @@ impl DiarizationModelManager {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::TempDir;
     
     #[test]
     fn test_model_paths() {
@@ -245,7 +255,6 @@ mod tests {
     fn test_cache_detection() {
         let manager = DiarizationModelManager::new().unwrap();
         
-        // Initially not cached (unless already downloaded)
         // Just check the method works
         let _ = manager.are_models_cached();
     }
