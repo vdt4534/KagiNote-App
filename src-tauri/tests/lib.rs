@@ -9,3 +9,6 @@ pub use kaginote_lib::*;
 
 // Test modules
 pub mod diarization_realtime;
+pub mod transcription_quality_analyzer;
+pub mod quality_analyzer_integration_test;
+pub mod quality_analyzer_demo;
