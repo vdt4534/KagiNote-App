@@ -13,6 +13,15 @@ import {
   SelectValue 
 } from '@/components/ui/select-new';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 import { MeetingFile } from './Dashboard';
 
 export interface TranscriptsPageProps {
@@ -155,10 +164,10 @@ export const TranscriptsPage: React.FC<TranscriptsPageProps> = ({
                 </h3>
               </div>
               <div className="flex items-center gap-2 text-sm text-gray-500">
-                <Icon name="calendar" size="sm" />
+                <Icon name="calendar" size="sm" className="w-4 h-4 min-w-[16px] min-h-[16px]" />
                 <span>{meeting.date.toLocaleDateString()}</span>
                 <span>•</span>
-                <Icon name="clock" size="sm" />
+                <Icon name="clock" size="sm" className="w-4 h-4 min-w-[16px] min-h-[16px]" />
                 <span>{formatDuration(meeting.duration)}</span>
               </div>
             </div>
@@ -171,8 +180,9 @@ export const TranscriptsPage: React.FC<TranscriptsPageProps> = ({
                   onExportMeeting(meeting.id, 'pdf');
                 }}
                 title="Export"
+                className="h-8 w-8 p-0"
               >
-                <Icon name="download" size="sm" />
+                <Icon name="download" size="sm" className="w-4 h-4 min-w-[16px] min-h-[16px]" />
               </Button>
               <Button
                 variant="ghost"
@@ -182,8 +192,9 @@ export const TranscriptsPage: React.FC<TranscriptsPageProps> = ({
                   onDeleteMeeting(meeting.id);
                 }}
                 title="Delete"
+                className="h-8 w-8 p-0"
               >
-                <Icon name="trash" size="sm" />
+                <Icon name="trash" size="sm" className="w-4 h-4 min-w-[16px] min-h-[16px]" />
               </Button>
             </div>
           </div>
@@ -194,8 +205,8 @@ export const TranscriptsPage: React.FC<TranscriptsPageProps> = ({
           </p>
           <div className="flex items-center justify-between">
             <div className="flex gap-2">
-              <Badge variant="secondary" size="sm">
-                <Icon name="users" size="sm" className="mr-1" />
+              <Badge variant="secondary" className="text-xs">
+                <Icon name="users" size="sm" className="mr-1 w-3 h-3 min-w-[12px] min-h-[12px]" />
                 {meeting.speakers} speakers
               </Badge>
               <Badge variant="outline" size="sm">
@@ -224,79 +235,80 @@ export const TranscriptsPage: React.FC<TranscriptsPageProps> = ({
     const isSelected = selectedMeetings.has(meeting.id);
     
     return (
-      <tr 
+      <TableRow 
         key={meeting.id}
         className={cn(
-          'hover:bg-gray-50 dark:hover:bg-gray-800',
-          isSelected && 'bg-blue-50 dark:bg-blue-900/20'
+          isSelected && 'bg-muted'
         )}
       >
-        <td className="px-4 py-3">
+        <TableCell>
           <input
             type="checkbox"
             checked={isSelected}
             onChange={() => handleSelectMeeting(meeting.id)}
             className="rounded border-gray-300"
           />
-        </td>
-        <td className="px-4 py-3">
+        </TableCell>
+        <TableCell>
           <button
             onClick={() => onOpenMeeting(meeting.id)}
-            className="text-left hover:text-blue-600"
+            className="text-left hover:text-blue-600 focus:text-blue-600 focus:outline-none"
           >
             <div className="font-medium">{meeting.title}</div>
-            <div className="text-sm text-gray-500 line-clamp-1">{meeting.preview}</div>
+            <div className="text-sm text-muted-foreground line-clamp-1">{meeting.preview}</div>
           </button>
-        </td>
-        <td className="px-4 py-3 text-sm">
+        </TableCell>
+        <TableCell className="text-sm">
           {meeting.date.toLocaleDateString()}
-        </td>
-        <td className="px-4 py-3 text-sm">
+        </TableCell>
+        <TableCell className="text-sm">
           {formatDuration(meeting.duration)}
-        </td>
-        <td className="px-4 py-3">
-          <Badge variant="secondary" size="sm">
+        </TableCell>
+        <TableCell>
+          <Badge variant="secondary" className="text-xs">
             {meeting.speakers}
           </Badge>
-        </td>
-        <td className="px-4 py-3">
-          <Badge variant="outline" size="sm">
+        </TableCell>
+        <TableCell>
+          <Badge variant="outline" className="text-xs">
             {meeting.language}
           </Badge>
-        </td>
-        <td className="px-4 py-3">
+        </TableCell>
+        <TableCell>
           <Badge 
             variant={
-              meeting.quality === 'High Accuracy' ? 'success' :
-              meeting.quality === 'Turbo' ? 'warning' : 'default'
+              meeting.quality === 'High Accuracy' ? 'default' :
+              meeting.quality === 'Turbo' ? 'secondary' : 'outline'
             }
-            size="sm"
+            className="text-xs"
           >
             {meeting.quality}
           </Badge>
-        </td>
-        <td className="px-4 py-3 text-sm">
+        </TableCell>
+        <TableCell className="text-sm">
           {meeting.accuracy}%
-        </td>
-        <td className="px-4 py-3">
+        </TableCell>
+        <TableCell>
           <div className="flex gap-1">
             <Button
               variant="ghost"
               size="sm"
               onClick={() => onExportMeeting(meeting.id, 'pdf')}
+              className="h-8 w-8 p-0"
             >
-              <Icon name="download" size="sm" />
+              <Icon name="download" size="sm" className="w-4 h-4 min-w-[16px] min-h-[16px]" />
             </Button>
             <Button
               variant="ghost"
               size="sm"
               onClick={() => onDeleteMeeting(meeting.id)}
+              className="h-8 w-8 p-0"
             >
-              <Icon name="trash" size="sm" />
+              <Icon name="trash" size="sm" className="w-4 h-4 min-w-[16px] min-h-[16px]" />
             </Button>
           </div>
-        </td>
-      </tr>
+        </TableCell>
+      </TableRow>
     );
   };
 
@@ -308,75 +320,84 @@ export const TranscriptsPage: React.FC<TranscriptsPageProps> = ({
           <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">
             Transcripts
           </h1>
-          <div className="flex items-center gap-2">
-            <Button
-              variant={viewMode === 'grid' ? 'default' : 'ghost'}
-              size="sm"
-              onClick={() => setViewMode('grid')}
+          {/* View mode toggle */}
+          <ToggleGroup 
+            type="single" 
+            value={viewMode} 
+            onValueChange={(value) => value && setViewMode(value as ViewMode)}
+            className="bg-muted p-1 rounded-md"
+          >
+            <ToggleGroupItem 
+              value="grid" 
+              className="px-3 py-2 h-9 min-h-[36px] data-[state=on]:bg-background data-[state=on]:shadow-sm"
+              aria-label="Grid view"
             >
-              <Icon name="grid" size="sm" />
-            </Button>
-            <Button
-              variant={viewMode === 'list' ? 'default' : 'ghost'}
-              size="sm"
-              onClick={() => setViewMode('list')}
+              <Icon name="grid" size="sm" className="w-4 h-4 min-w-[16px] min-h-[16px]" />
+            </ToggleGroupItem>
+            <ToggleGroupItem 
+              value="list" 
+              className="px-3 py-2 h-9 min-h-[36px] data-[state=on]:bg-background data-[state=on]:shadow-sm"
+              aria-label="List view"
             >
-              <Icon name="list" size="sm" />
-            </Button>
-          </div>
+              <Icon name="list" size="sm" className="w-4 h-4 min-w-[16px] min-h-[16px]" />
+            </ToggleGroupItem>
+          </ToggleGroup>
         </div>
 
         {/* Search and filters */}
-        <div className="flex flex-col sm:flex-row gap-3">
-          <div className="flex-1">
-            <div className="relative">
-              <Icon 
-                name="search" 
-                size="sm" 
-                className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"
-              />
-              <Input
-                type="text"
-                placeholder="Search transcripts..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10"
-              />
-            </div>
+        <div className="space-y-3">
+          {/* Search bar - always full width */}
+          <div className="relative">
+            <Icon 
+              name="search" 
+              size="sm" 
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4 min-w-[16px] min-h-[16px]"
+            />
+            <Input
+              type="text"
+              placeholder="Search transcripts..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-10"
+            />
           </div>
-          <Select value={sortBy} onValueChange={(value) => setSortBy(value as SortBy)}>
-            <SelectTrigger className="w-[140px]">
-              <SelectValue placeholder="Sort by" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="date">Date</SelectItem>
-              <SelectItem value="title">Title</SelectItem>
-              <SelectItem value="duration">Duration</SelectItem>
-              <SelectItem value="speakers">Speakers</SelectItem>
-            </SelectContent>
-          </Select>
-          <Select value={filterLanguage} onValueChange={(value) => setFilterLanguage(value as FilterLanguage)}>
-            <SelectTrigger className="w-[140px]">
-              <SelectValue placeholder="Language" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Languages</SelectItem>
-              <SelectItem value="english">English</SelectItem>
-              <SelectItem value="japanese">Japanese</SelectItem>
-              <SelectItem value="other">Other</SelectItem>
-            </SelectContent>
-          </Select>
-          <Select value={filterQuality} onValueChange={(value) => setFilterQuality(value as FilterQuality)}>
-            <SelectTrigger className="w-[140px]">
-              <SelectValue placeholder="Quality" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Quality</SelectItem>
-              <SelectItem value="Standard">Standard</SelectItem>
-              <SelectItem value="High Accuracy">High Accuracy</SelectItem>
-              <SelectItem value="Turbo">Turbo</SelectItem>
-            </SelectContent>
-          </Select>
+          
+          {/* Filter controls - responsive layout */}
+          <div className="flex flex-col sm:flex-row gap-3">
+            <Select value={sortBy} onValueChange={(value) => setSortBy(value as SortBy)}>
+              <SelectTrigger className="w-full sm:w-[140px]">
+                <SelectValue placeholder="Sort by" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="date">Date</SelectItem>
+                <SelectItem value="title">Title</SelectItem>
+                <SelectItem value="duration">Duration</SelectItem>
+                <SelectItem value="speakers">Speakers</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={filterLanguage} onValueChange={(value) => setFilterLanguage(value as FilterLanguage)}>
+              <SelectTrigger className="w-full sm:w-[140px]">
+                <SelectValue placeholder="Language" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Languages</SelectItem>
+                <SelectItem value="english">English</SelectItem>
+                <SelectItem value="japanese">Japanese</SelectItem>
+                <SelectItem value="other">Other</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={filterQuality} onValueChange={(value) => setFilterQuality(value as FilterQuality)}>
+              <SelectTrigger className="w-full sm:w-[140px]">
+                <SelectValue placeholder="Quality" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Quality</SelectItem>
+                <SelectItem value="Standard">Standard</SelectItem>
+                <SelectItem value="High Accuracy">High Accuracy</SelectItem>
+                <SelectItem value="Turbo">Turbo</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
         </div>
 
         {/* Batch operations */}
@@ -415,7 +436,7 @@ export const TranscriptsPage: React.FC<TranscriptsPageProps> = ({
       </div>
 
       {/* Stats bar */}
-      <div className="flex-shrink-0 grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
+      <div className="flex-shrink-0 grid grid-cols-1 xs:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         <Card>
           <CardBody className="p-4">
             <div className="text-2xl font-bold text-gray-900 dark:text-gray-100">
@@ -463,53 +484,44 @@ export const TranscriptsPage: React.FC<TranscriptsPageProps> = ({
             </p>
           </div>
         ) : viewMode === 'grid' ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {filteredMeetings.map(renderTranscriptCard)}
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
-                <tr>
-                  <th className="px-4 py-3 text-left">
-                    <input
-                      type="checkbox"
-                      checked={selectedMeetings.size === filteredMeetings.length && filteredMeetings.length > 0}
-                      onChange={handleSelectAll}
-                      className="rounded border-gray-300"
-                    />
-                  </th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300">
-                    Title
-                  </th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300">
-                    Date
-                  </th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300">
-                    Duration
-                  </th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300">
-                    Speakers
-                  </th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300">
-                    Language
-                  </th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300">
-                    Quality
-                  </th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300">
-                    Accuracy
-                  </th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300">
-                    Actions
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-                {filteredMeetings.map(renderTranscriptRow)}
-              </tbody>
-            </table>
-          </div>
+          <>
+            {/* List view - responsive table using shadcn/ui Table */}
+            <div className="hidden md:block">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-12">
+                      <input
+                        type="checkbox"
+                        checked={selectedMeetings.size === filteredMeetings.length && filteredMeetings.length > 0}
+                        onChange={handleSelectAll}
+                        className="rounded border-gray-300"
+                      />
+                    </TableHead>
+                    <TableHead>Title</TableHead>
+                    <TableHead>Date</TableHead>
+                    <TableHead>Duration</TableHead>
+                    <TableHead>Speakers</TableHead>
+                    <TableHead>Language</TableHead>
+                    <TableHead>Quality</TableHead>
+                    <TableHead>Accuracy</TableHead>
+                    <TableHead>Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredMeetings.map(renderTranscriptRow)}
+                </TableBody>
+              </Table>
+            </div>
+            {/* Mobile list view - card format */}
+            <div className="md:hidden space-y-3">
+              {filteredMeetings.map(renderTranscriptCard)}
+            </div>
+          </>
         )}
       </div>
     </div>
