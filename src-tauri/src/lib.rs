@@ -8,6 +8,7 @@ pub mod asr;
 pub mod diarization;
 pub mod models;
 pub mod storage;
+pub mod transcription;
 
 use tauri::Manager;
 

@@ -15,6 +15,9 @@ use crate::models::{
     CreateSpeakerProfileRequest, UpdateSpeakerProfileRequest, SpeakerIdentification
 };
 use crate::storage::{Database, SpeakerStore, EmbeddingIndex, SeedManager};
+use crate::transcription::{ContentHasher, TemporalAnalyzer, BoundaryDetector};
+use crate::transcription::temporal_analyzer::TemporalSegment;
+use crate::transcription::boundary_detector::{AudioChunk, BoundaryConfig, BoundaryType};
 use uuid::Uuid;
 use tauri::{Emitter, Manager, State};
 use std::collections::{HashMap, VecDeque};
@@ -1243,7 +1246,7 @@ async fn initialize_whisper_engine_async(
     Ok(engine)
 }
 
-/// Real-time transcription processing loop
+/// Real-time transcription processing loop with advanced quality improvements
 async fn run_transcription_loop(
     session_id: String,
     app_handle: tauri::AppHandle,
@@ -1252,23 +1255,30 @@ async fn run_transcription_loop(
     let mut audio_level_counter = 0;
     let mut transcription_counter = 0;
     
-    // Enhanced audio buffering with speech boundary detection
+    // Enhanced audio buffering with intelligent boundary detection
     let mut audio_buffer: Vec<f32> = Vec::new();
     let mut buffer_timestamp = std::time::SystemTime::now();
-    let mut silence_duration_ms = 0u64;
-    let mut last_speech_time = std::time::SystemTime::now();
     let mut consecutive_silence_chunks = 0;
     
-    // Segment deduplication tracking
-    let mut recent_segments: VecDeque<(String, f32)> = VecDeque::with_capacity(3);
-    const SIMILARITY_THRESHOLD: f32 = 0.8; // 80% similarity means duplicate
+    // Initialize advanced transcription quality modules
+    let mut content_hasher = ContentHasher::new(8, 0.6); // 8 segments, 60% similarity threshold
+    let mut temporal_analyzer = TemporalAnalyzer::new(10, 0.3, 0.1); // 10 segments, 0.3s overlap, 0.1s gap
+    let boundary_config = BoundaryConfig {
+        silence_threshold: 0.015,
+        soft_boundary_ms: 600,
+        hard_boundary_ms: 1000,
+        max_chunks: 50,
+        min_speech_duration_ms: 4500, // 4.5s minimum for complete thoughts
+        energy_variance_threshold: 0.05,
+        spectral_analysis_enabled: true,
+    };
+    let mut boundary_detector = BoundaryDetector::new(boundary_config);
     
-    // Configurable buffering parameters
-    const MIN_AUDIO_DURATION_MS: u64 = 3000; // 3 seconds minimum for better context
-    const MAX_AUDIO_DURATION_MS: u64 = 15000; // 15 seconds maximum
-    const SILENCE_THRESHOLD: f32 = 0.02; // Energy threshold for silence
-    const SILENCE_DURATION_FOR_BOUNDARY_MS: u64 = 500; // 500ms silence = speech boundary
-    const MAX_BUFFER_SIZE: usize = 16000 * 15; // 15 seconds at 16kHz
+    // Enhanced buffering parameters for complete utterances
+    const MIN_AUDIO_DURATION_MS: u64 = 4500; // 4.5 seconds minimum for complete thoughts
+    const MAX_AUDIO_DURATION_MS: u64 = 20000; // 20 seconds maximum (even longer for complex thoughts)
+    const SILENCE_THRESHOLD: f32 = 0.015; // More sensitive silence detection
+    const MAX_BUFFER_SIZE: usize = 16000 * 20; // 20 seconds at 16kHz
     
     // Main processing loop - continue until session is stopped
     loop {
@@ -1321,11 +1331,28 @@ async fn run_transcription_loop(
             // Calculate audio level (RMS)
             let audio_level = calculate_audio_level(&audio_data.samples);
             
+            // Create audio chunk for boundary detection
+            let audio_chunk = AudioChunk {
+                samples: audio_data.samples.clone(),
+                sample_rate: audio_data.sample_rate,
+                timestamp: audio_data.timestamp,
+                energy_level: audio_level,
+            };
+            
+            // Process chunk through boundary detector
+            let boundary_type = boundary_detector.process_chunk(audio_chunk);
+            
             // Emit audio level updates every few chunks for UI responsiveness
             if audio_level_counter % 3 == 0 { // ~30fps if chunks are 100ms
                 if let Err(emit_err) = app_handle.emit("audio-level", serde_json::json!({
                     "level": audio_level,
                     "vadActivity": audio_level > 0.02, // Simple VAD threshold
+                    "boundaryType": match boundary_type {
+                        BoundaryType::None => "none",
+                        BoundaryType::SoftBoundary => "soft",
+                        BoundaryType::HardBoundary => "hard",
+                        BoundaryType::SentenceEnd => "sentence_end",
+                    },
                     "sessionId": session_id,
                     "timestamp": std::time::SystemTime::now()
                         .duration_since(std::time::UNIX_EPOCH)
@@ -1337,13 +1364,12 @@ async fn run_transcription_loop(
             }
             audio_level_counter += 1;
             
-            // Enhanced buffering with speech boundary detection
+            // Enhanced buffering with intelligent boundary detection
             let is_speech = audio_level > SILENCE_THRESHOLD;
             
             if is_speech {
                 // Reset silence counter when speech detected
                 consecutive_silence_chunks = 0;
-                last_speech_time = std::time::SystemTime::now();
                 
                 // Reset buffer timestamp on first audio activity
                 if audio_buffer.is_empty() {
@@ -1359,9 +1385,6 @@ async fn run_transcription_loop(
                 
                 // Still add silence to buffer (important for natural speech)
                 audio_buffer.extend_from_slice(&audio_data.samples);
-                
-                // Calculate silence duration (assuming ~100ms chunks)
-                silence_duration_ms = consecutive_silence_chunks as u64 * 100;
             }
             
             // Prevent buffer from growing too large
@@ -1371,13 +1394,21 @@ async fn run_transcription_loop(
                 tracing::warn!("Audio buffer exceeded maximum size, trimmed {} samples", excess);
             }
             
-            // Determine if we should send buffer to transcription
+            // Determine if we should send buffer to transcription using intelligent boundary detection
             let buffer_duration_ms = buffer_timestamp.elapsed().unwrap_or_default().as_millis() as u64;
+            
+            // Use boundary detector to make intelligent transcription decisions
             let should_transcribe = !audio_buffer.is_empty() && (
-                // Natural speech boundary detected (silence after speech)
-                (silence_duration_ms >= SILENCE_DURATION_FOR_BOUNDARY_MS && buffer_duration_ms >= MIN_AUDIO_DURATION_MS) ||
-                // Maximum duration reached
-                buffer_duration_ms >= MAX_AUDIO_DURATION_MS
+                // Hard boundary detected with sufficient content
+                (matches!(boundary_type, BoundaryType::HardBoundary | BoundaryType::SentenceEnd) 
+                 && buffer_duration_ms >= MIN_AUDIO_DURATION_MS) ||
+                // Soft boundary with longer content (more conservative)
+                (matches!(boundary_type, BoundaryType::SoftBoundary) 
+                 && buffer_duration_ms >= MIN_AUDIO_DURATION_MS + 2000) ||
+                // Maximum duration reached (fallback)
+                buffer_duration_ms >= MAX_AUDIO_DURATION_MS ||
+                // Override: boundary detector suggests not to continue buffering
+                !boundary_detector.should_continue_buffering(buffer_duration_ms)
             );
             
             if should_transcribe {
@@ -1436,11 +1467,19 @@ async fn run_transcription_loop(
                 if let Some(result) = transcription_result {
                     let cleaned_text = result.text.trim();
                     
-                    // Check for duplicates, empty text, or BLANK_AUDIO
-                    if !cleaned_text.is_empty() 
-                        && !cleaned_text.contains("[BLANK_AUDIO]")
-                        && !cleaned_text.contains("[INAUDIBLE]")
-                        && !is_duplicate_segment(cleaned_text, &recent_segments, SIMILARITY_THRESHOLD) {
+                    // Advanced duplicate detection using semantic content hashing
+                    let current_time = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs() as f32;
+                    
+                    // Check for duplicates using advanced content hasher
+                    let is_duplicate = cleaned_text.is_empty() 
+                        || cleaned_text.contains("[BLANK_AUDIO]")
+                        || cleaned_text.contains("[INAUDIBLE]")
+                        || content_hasher.is_duplicate(cleaned_text, current_time);
+                    
+                    if !is_duplicate {
                         tracing::info!("Emitting transcription update: '{}'", cleaned_text);
                         
                         // Determine speaker ID using diarization if enabled
@@ -1545,41 +1584,80 @@ async fn run_transcription_loop(
                         let segment_start = current_time - start_time - (buffer_duration_ms as f32 / 1000.0);
                         let segment_end = current_time - start_time;
                         
-                        // Create the segment with actual timestamps
-                        let segment = serde_json::json!({
-                            "text": cleaned_text,
-                            "startTime": segment_start,
-                            "endTime": segment_end,
-                            "confidence": result.confidence,
-                            "speaker": speaker_id
-                        });
+                        // Create temporal segment for analysis
+                        let mut temporal_segment = TemporalSegment {
+                            text: cleaned_text.to_string(),
+                            start_time: segment_start,
+                            end_time: segment_end,
+                            confidence: result.confidence,
+                            speaker_id: speaker_id.clone(),
+                        };
                         
-                        // Add to recent segments for deduplication
-                        recent_segments.push_back((cleaned_text.to_string(), segment_end));
-                        if recent_segments.len() > 3 {
-                            recent_segments.pop_front();
-                        }
-                        
-                        // Store the segment in the session state
-                        {
-                            let mut sessions_guard = state.active_sessions.lock().await;
-                            if let Some(session_state) = sessions_guard.get_mut(&session_id) {
-                                session_state.transcription_segments.push(segment.clone());
-                                tracing::debug!("Stored segment #{} for session {}", 
-                                             session_state.transcription_segments.len(), session_id);
+                        // Validate timing and check for temporal conflicts
+                        if !temporal_analyzer.is_valid_timing(&temporal_segment) {
+                            tracing::warn!("Invalid timing detected for segment: {:.2}s - {:.2}s", 
+                                          segment_start, segment_end);
+                            // Try to correct the timing
+                            if let Some((corrected_start, corrected_end)) = 
+                                temporal_analyzer.suggest_timing_correction(&temporal_segment) {
+                                tracing::info!("Applying timing correction: {:.2}s - {:.2}s", 
+                                              corrected_start, corrected_end);
+                                temporal_segment.start_time = corrected_start;
+                                temporal_segment.end_time = corrected_end;
                             }
                         }
                         
-                        // Emit the update to the frontend
-                        if let Err(emit_err) = app_handle.emit("transcription-update", serde_json::json!({
-                            "sessionId": session_id,
-                            "segment": segment,
-                            "updateType": "new",
-                            "processingPass": 1
-                        })) {
-                            tracing::error!("Failed to emit transcription-update event: {}", emit_err);
+                        // Check for temporal conflicts and handle merging if needed
+                        let final_segments = if temporal_analyzer.has_temporal_conflict(&temporal_segment) {
+                            tracing::debug!("Temporal conflict detected, attempting to merge segments");
+                            temporal_analyzer.merge_overlapping_segments(temporal_segment)
+                        } else {
+                            temporal_analyzer.add_segment(temporal_segment.clone());
+                            vec![temporal_segment]
+                        };
+                        
+                        // Process all final segments (usually just one, multiple if merged)
+                        for final_segment in final_segments {
+                            // Create the segment JSON with validated timestamps
+                            let segment = serde_json::json!({
+                                "text": final_segment.text,
+                                "startTime": final_segment.start_time,
+                                "endTime": final_segment.end_time,
+                                "confidence": final_segment.confidence,
+                                "speaker": final_segment.speaker_id,
+                                "qualityScore": {
+                                    "boundaryType": match boundary_type {
+                                        BoundaryType::None => "none",
+                                        BoundaryType::SoftBoundary => "soft",
+                                        BoundaryType::HardBoundary => "hard", 
+                                        BoundaryType::SentenceEnd => "sentence_end",
+                                    },
+                                    "processingVersion": "v2_enhanced"
+                                }
+                            });
+                            
+                            // Store the segment in the session state
+                            {
+                                let mut sessions_guard = state.active_sessions.lock().await;
+                                if let Some(session_state) = sessions_guard.get_mut(&session_id) {
+                                    session_state.transcription_segments.push(segment.clone());
+                                    tracing::debug!("Stored enhanced segment #{} for session {} ({})", 
+                                                 session_state.transcription_segments.len(), session_id, final_segment.text.len());
+                                }
+                            }
+                            
+                            // Emit the update to the frontend
+                            if let Err(emit_err) = app_handle.emit("transcription-update", serde_json::json!({
+                                "sessionId": session_id,
+                                "segment": segment,
+                                "updateType": "new",
+                                "processingPass": 2,
+                                "qualityEnhanced": true
+                            })) {
+                                tracing::error!("Failed to emit transcription-update event: {}", emit_err);
+                            }
+                            transcription_counter += 1;
                         }
-                        transcription_counter += 1;
                     } else {
                         tracing::debug!("Transcription result was empty, not emitting update");
                     }
@@ -1591,7 +1669,6 @@ async fn run_transcription_loop(
                 audio_buffer.clear();
                 buffer_timestamp = std::time::SystemTime::now();
                 consecutive_silence_chunks = 0;
-                silence_duration_ms = 0;
                 tracing::debug!("Buffer cleared, ready for next segment");
             } else {
                 // No voice activity - clear buffer if it's been too long
@@ -1600,7 +1677,6 @@ async fn run_transcription_loop(
                     tracing::debug!("Clearing stale audio buffer after {}ms", buffer_age_ms);
                     audio_buffer.clear();
                     consecutive_silence_chunks = 0;
-                    silence_duration_ms = 0;
                 }
             }
             
@@ -1647,38 +1723,97 @@ fn calculate_audio_level(samples: &[f32]) -> f32 {
 
 /// Calculate text similarity using simple word overlap
 fn calculate_text_similarity(text1: &str, text2: &str) -> f32 {
-    let words1: Vec<&str> = text1.split_whitespace().collect();
-    let words2: Vec<&str> = text2.split_whitespace().collect();
+    let text1_clean = text1.trim().to_lowercase();
+    let text2_clean = text2.trim().to_lowercase();
+    
+    // If one text is empty, not similar
+    if text1_clean.is_empty() || text2_clean.is_empty() {
+        return 0.0;
+    }
+    
+    // Check for exact match (case insensitive)
+    if text1_clean == text2_clean {
+        return 1.0;
+    }
+    
+    // Enhanced substring detection with minimum overlap
+    let min_overlap = 8.max(text1_clean.len().min(text2_clean.len()) / 3);
+    if text1_clean.len() >= min_overlap && text2_clean.len() >= min_overlap {
+        if text1_clean.contains(&text2_clean) || text2_clean.contains(&text1_clean) {
+            return 0.95; // Very high similarity for containment
+        }
+    }
+    
+    let words1: Vec<&str> = text1_clean.split_whitespace().collect();
+    let words2: Vec<&str> = text2_clean.split_whitespace().collect();
     
     if words1.is_empty() || words2.is_empty() {
         return 0.0;
     }
     
+    // Enhanced semantic similarity calculation
     let mut common_words = 0;
-    for word1 in &words1 {
-        if words2.contains(word1) {
+    let mut word_position_bonus = 0.0;
+    
+    // Count common words with position weighting
+    for (i, word1) in words1.iter().enumerate() {
+        if let Some(j) = words2.iter().position(|&w| w == *word1) {
             common_words += 1;
+            // Bonus for words in similar positions
+            let position_diff = (i as f32 - j as f32).abs() / words1.len().max(words2.len()) as f32;
+            word_position_bonus += 1.0 - position_diff;
         }
     }
     
-    // Calculate Jaccard similarity
+    // Calculate enhanced Jaccard similarity with position weighting
     let union_size = words1.len() + words2.len() - common_words;
     if union_size == 0 {
         return 0.0;
     }
     
-    common_words as f32 / union_size as f32
+    let jaccard_similarity = common_words as f32 / union_size as f32;
+    let position_weight = word_position_bonus / common_words.max(1) as f32;
+    
+    // Combine Jaccard similarity with position weighting
+    (jaccard_similarity * 0.7 + position_weight * 0.3).min(1.0)
 }
 
 /// Check if text is similar to recent segments
 fn is_duplicate_segment(text: &str, recent_segments: &VecDeque<(String, f32)>, threshold: f32) -> bool {
+    let text_clean = text.trim().to_lowercase();
+    
+    // Skip very short texts (likely noise)
+    if text_clean.len() < 5 {
+        return false;
+    }
+    
     for (recent_text, _timestamp) in recent_segments {
-        // Check for exact substring match (partial transcriptions)
-        if text.starts_with(recent_text) || recent_text.starts_with(text) {
+        let recent_clean = recent_text.trim().to_lowercase();
+        
+        // Check for exact match
+        if text_clean == recent_clean {
             return true;
         }
         
-        // Check for high similarity
+        // Enhanced substring matching with minimum overlap requirement
+        let min_overlap = 8.max(text_clean.len().min(recent_clean.len()) / 4);
+        if text_clean.len() >= min_overlap && recent_clean.len() >= min_overlap {
+            // Check for significant overlap in either direction
+            if text_clean.contains(&recent_clean) || recent_clean.contains(&text_clean) {
+                return true;
+            }
+            
+            // Check for substantial prefix/suffix overlap
+            if text_clean.len() > 15 && recent_clean.len() > 15 {
+                let overlap_threshold = text_clean.len().min(recent_clean.len()) * 3 / 4;
+                if text_clean[..overlap_threshold.min(text_clean.len())].contains(&recent_clean[..overlap_threshold.min(recent_clean.len())])
+                   || recent_clean[..overlap_threshold.min(recent_clean.len())].contains(&text_clean[..overlap_threshold.min(text_clean.len())]) {
+                    return true;
+                }
+            }
+        }
+        
+        // Use enhanced semantic similarity 
         if calculate_text_similarity(text, recent_text) >= threshold {
             return true;
         }
