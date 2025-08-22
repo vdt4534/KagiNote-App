@@ -1,0 +1,60 @@
+{
+  "audio_file": "test_2speakers_conversation.wav",
+  "duration": 30.0,
+  "total_speakers": 2,
+  "metadata": {
+    "scenario_type": "simple_turn_taking",
+    "description": "Simple turn-taking conversation between 2 speakers",
+    "created_by": "KagiNote Test Suite",
+    "creation_date": "2025-08-22",
+    "audio_format": "16kHz, 16-bit, mono",
+    "language": "en-US",
+    "environment": "synthetic_clean",
+    "speaker_0_profile": "synthetic_261Hz_male",
+    "speaker_1_profile": "synthetic_329Hz_female"
+  },
+  "segments": [
+    {
+      "speaker_id": "speaker_0",
+      "start_time": 0.0,
+      "end_time": 5.0,
+      "text": "Hello, how are you today?",
+      "confidence": 0.95
+    },
+    {
+      "speaker_id": "speaker_1",
+      "start_time": 5.5,
+      "end_time": 10.0,
+      "text": "I'm doing well, thank you for asking.",
+      "confidence": 0.92
+    },
+    {
+      "speaker_id": "speaker_0",
+      "start_time": 10.5,
+      "end_time": 15.0,
+      "text": "That's great to hear.",
+      "confidence": 0.94
+    },
+    {
+      "speaker_id": "speaker_1",
+      "start_time": 15.5,
+      "end_time": 20.0,
+      "text": "How about you?",
+      "confidence": 0.90
+    },
+    {
+      "speaker_id": "speaker_0",
+      "start_time": 20.5,
+      "end_time": 25.0,
+      "text": "I'm having a good day too.",
+      "confidence": 0.93
+    },
+    {
+      "speaker_id": "speaker_1",
+      "start_time": 25.5,
+      "end_time": 30.0,
+      "text": "Wonderful to hear that.",
+      "confidence": 0.91
+    }
+  ]
+}

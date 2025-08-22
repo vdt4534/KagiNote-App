@@ -1,0 +1,2 @@
+# This file ensures the ground_truth directory is preserved in git
+# Ground truth JSON files are stored here

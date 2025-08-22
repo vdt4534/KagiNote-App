@@ -147,6 +147,60 @@ ndarray = "0.15"
 - **Runtime Cache**: `~/Library/Application Support/KagiNote/models/diarization/`
 - **For Developers**: Run `./scripts/download_sherpa_models.sh` to get models for development
 
+## 🧪 Comprehensive Test Infrastructure (August 2025)
+
+### Real-Time Speaker Diarization Testing
+
+A complete test infrastructure has been created for testing and optimizing speaker diarization with real audio files:
+
+**Test Location:** `src-tauri/tests/diarization_realtime/`
+
+**Available Resources:**
+- **Real Audio Files**: LibriSpeech test-clean dataset (346MB, 20+ speakers)
+- **Test Scenarios**: 10 comprehensive scenarios (single speaker to 8-speaker conference)
+- **Validation Framework**: DER metrics, precision/recall, performance monitoring
+- **Audio Simulator**: Real-time streaming simulation with 100ms chunks
+- **HTML Reports**: Visual test results with metrics and recommendations
+
+**Quick Testing:**
+```bash
+# Make scripts executable
+chmod +x src-tauri/tests/diarization_realtime/*.sh
+
+# Download test audio (includes LibriSpeech samples)
+./src-tauri/tests/diarization_realtime/download_test_data.sh
+
+# Run tests with HTML report
+./src-tauri/tests/diarization_realtime/run_tests_simple.sh
+
+# View results
+open src-tauri/tests/diarization_realtime/reports/test_report.html
+```
+
+**Test Commands:**
+```bash
+# Validation framework tests
+cargo test validation_framework_test --manifest-path src-tauri/Cargo.toml
+
+# Performance tests
+cargo test diarization_realtime::performance_tests --manifest-path src-tauri/Cargo.toml
+
+# Accuracy tests with real audio
+cargo test diarization_realtime::accuracy_tests --manifest-path src-tauri/Cargo.toml
+
+# Memory and stress tests
+cargo test diarization_realtime::memory_tests --manifest-path src-tauri/Cargo.toml
+```
+
+**Performance Targets:**
+- Real-time Factor: <1.5x
+- Latency: <2.0s
+- Memory Usage: <500MB
+- DER: <15%
+- Speaker Accuracy: >85%
+
+The test infrastructure allows rapid experimentation with different diarization approaches using real audio data.
+
 **Important for Users**: Models are bundled with the app. End users don't need to download anything or have any special accounts. Everything works offline out of the box.
 
 ## Privacy & Security

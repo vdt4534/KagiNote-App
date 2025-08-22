@@ -1,0 +1,77 @@
+{
+  "audio_file": "test_3speakers_meeting.wav",
+  "duration": 45.0,
+  "total_speakers": 3,
+  "metadata": {
+    "scenario_type": "multi_speaker_meeting",
+    "description": "Meeting simulation with 3 speakers and natural interruptions",
+    "created_by": "KagiNote Test Suite",
+    "creation_date": "2025-08-22",
+    "audio_format": "16kHz, 16-bit, mono",
+    "language": "en-US",
+    "environment": "synthetic_meeting_room",
+    "speaker_0_profile": "synthetic_261Hz_male_host",
+    "speaker_1_profile": "synthetic_329Hz_female_participant",
+    "speaker_2_profile": "synthetic_392Hz_male_participant",
+    "has_interruptions": true,
+    "has_overlapping_speech": true
+  },
+  "segments": [
+    {
+      "speaker_id": "speaker_0",
+      "start_time": 0.0,
+      "end_time": 6.0,
+      "text": "Welcome everyone to today's meeting.",
+      "confidence": 0.96
+    },
+    {
+      "speaker_id": "speaker_1",
+      "start_time": 6.5,
+      "end_time": 12.0,
+      "text": "Thanks for organizing this.",
+      "confidence": 0.94
+    },
+    {
+      "speaker_id": "speaker_2",
+      "start_time": 12.5,
+      "end_time": 18.0,
+      "text": "I have some important updates to share.",
+      "confidence": 0.93
+    },
+    {
+      "speaker_id": "speaker_1",
+      "start_time": 17.0,
+      "end_time": 22.0,
+      "text": "Sorry to interrupt, but this is urgent.",
+      "confidence": 0.89
+    },
+    {
+      "speaker_id": "speaker_2",
+      "start_time": 22.5,
+      "end_time": 28.0,
+      "text": "No problem, what's the issue?",
+      "confidence": 0.92
+    },
+    {
+      "speaker_id": "speaker_0",
+      "start_time": 28.5,
+      "end_time": 35.0,
+      "text": "Let's address this concern first.",
+      "confidence": 0.95
+    },
+    {
+      "speaker_id": "speaker_1",
+      "start_time": 35.5,
+      "end_time": 41.0,
+      "text": "I appreciate your understanding.",
+      "confidence": 0.91
+    },
+    {
+      "speaker_id": "speaker_2",
+      "start_time": 41.5,
+      "end_time": 45.0,
+      "text": "Shall we continue with the agenda?",
+      "confidence": 0.94
+    }
+  ]
+}

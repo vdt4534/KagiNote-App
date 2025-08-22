@@ -157,7 +157,7 @@ mod tests {
     }
     
     #[tokio::test]
-    async fn test_database_migration() {
+    async fn test_database_migration() -> Result<()> {
         let temp_file = NamedTempFile::new().unwrap();
         let db = Database::new(temp_file.path()).await.unwrap();
         
@@ -166,7 +166,7 @@ mod tests {
         
         // Verify tables exist by querying them
         let connection = Arc::clone(&db.connection);
-        let result = tokio::task::spawn_blocking(move || -> Result<()> {
+        tokio::task::spawn_blocking(move || -> Result<()> {
             let conn = connection.lock().unwrap();
             let mut stmt = conn.prepare("SELECT name FROM sqlite_master WHERE type='table';")?;
             let table_names: Result<Vec<String>, _> = stmt.query_map([], |row| {
@@ -181,7 +181,7 @@ mod tests {
             Ok(())
         }).await??;
         
-        assert!(result.is_ok());
+        Ok(())
     }
     
     #[test]

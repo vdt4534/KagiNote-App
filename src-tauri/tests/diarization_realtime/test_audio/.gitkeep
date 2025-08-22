@@ -1,0 +1,2 @@
+# This file ensures the test_audio directory is preserved in git
+# Audio test files are excluded via .gitignore but this directory is needed

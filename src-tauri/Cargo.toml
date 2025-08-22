@@ -85,6 +85,9 @@ serial_test = "3.1"
 tempfile = "3.8"
 criterion = { version = "0.5", features = ["html_reports"] }
 proptest = "1.4"
+# Audio playback simulator dependencies
+rodio = { version = "0.18", default-features = false, features = ["symphonia-all"] }
+symphonia = { version = "0.5", features = ["all"] }
 
 [features]
 default = []

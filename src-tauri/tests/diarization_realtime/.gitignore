@@ -1,0 +1,60 @@
+# Audio test files - exclude large audio files from git
+test_audio/*.wav
+test_audio/*.mp3
+test_audio/*.m4a
+test_audio/*.flac
+test_audio/*.aac
+test_audio/*.ogg
+test_audio/*.webm
+
+# Test execution reports - generated dynamically
+reports/*.json
+reports/*.html
+reports/*.xml
+reports/*.csv
+
+# Log files from test runs
+*.log
+**/*.log
+
+# Temporary test files
+*.tmp
+**/*.tmp
+
+# Performance profiling data
+*.prof
+**/*.prof
+perf.data*
+
+# Memory debugging output
+valgrind-*.log
+*.memcheck
+
+# Benchmark results
+bench_*.json
+benchmark_*.txt
+
+# Test artifacts
+test_output/
+temp_test_files/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS-specific files
+.DS_Store
+Thumbs.db
+
+# Keep directory structure but ignore contents
+!test_audio/.gitkeep
+!ground_truth/.gitkeep
+!reports/.gitkeep
+
+# Keep example/template files
+!test_audio/README.md
+!ground_truth/README.md
+!reports/README.md

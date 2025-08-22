@@ -1,0 +1,97 @@
+{
+  "audio_file": "test_rapid_switching.wav",
+  "duration": 20.0,
+  "total_speakers": 2,
+  "metadata": {
+    "scenario_type": "rapid_switching",
+    "description": "Very fast speaker changes every 1-2 seconds - stress test",
+    "created_by": "KagiNote Test Suite",
+    "creation_date": "2025-08-22",
+    "audio_format": "16kHz, 16-bit, mono",
+    "language": "en-US",
+    "environment": "synthetic_rapid_fire",
+    "speaker_0_profile": "synthetic_261Hz_male_quick",
+    "speaker_1_profile": "synthetic_329Hz_female_quick",
+    "average_segment_duration": 1.5,
+    "challenge_level": "extreme"
+  },
+  "segments": [
+    {
+      "speaker_id": "speaker_0",
+      "start_time": 0.0,
+      "end_time": 1.5,
+      "text": "Yes.",
+      "confidence": 0.85
+    },
+    {
+      "speaker_id": "speaker_1",
+      "start_time": 1.8,
+      "end_time": 3.2,
+      "text": "No.",
+      "confidence": 0.83
+    },
+    {
+      "speaker_id": "speaker_0",
+      "start_time": 3.5,
+      "end_time": 5.0,
+      "text": "Maybe.",
+      "confidence": 0.81
+    },
+    {
+      "speaker_id": "speaker_1",
+      "start_time": 5.3,
+      "end_time": 6.8,
+      "text": "Exactly.",
+      "confidence": 0.86
+    },
+    {
+      "speaker_id": "speaker_0",
+      "start_time": 7.1,
+      "end_time": 8.5,
+      "text": "I see.",
+      "confidence": 0.82
+    },
+    {
+      "speaker_id": "speaker_1",
+      "start_time": 8.8,
+      "end_time": 10.5,
+      "text": "Right.",
+      "confidence": 0.84
+    },
+    {
+      "speaker_id": "speaker_0",
+      "start_time": 10.8,
+      "end_time": 12.3,
+      "text": "Okay.",
+      "confidence": 0.80
+    },
+    {
+      "speaker_id": "speaker_1",
+      "start_time": 12.6,
+      "end_time": 14.2,
+      "text": "Sure.",
+      "confidence": 0.87
+    },
+    {
+      "speaker_id": "speaker_0",
+      "start_time": 14.5,
+      "end_time": 16.0,
+      "text": "Got it.",
+      "confidence": 0.83
+    },
+    {
+      "speaker_id": "speaker_1",
+      "start_time": 16.3,
+      "end_time": 18.0,
+      "text": "Perfect.",
+      "confidence": 0.89
+    },
+    {
+      "speaker_id": "speaker_0",
+      "start_time": 18.3,
+      "end_time": 20.0,
+      "text": "Thanks.",
+      "confidence": 0.85
+    }
+  ]
+}

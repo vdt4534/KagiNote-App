@@ -1,0 +1,80 @@
+{
+  "recording_id": "example_meeting_001",
+  "segments": [
+    {
+      "speaker_id": "speaker_alice",
+      "start_time": 0.0,
+      "end_time": 3.2,
+      "text": "Good morning everyone, let's start the meeting",
+      "audio_file": null,
+      "quality": 1.0
+    },
+    {
+      "speaker_id": "speaker_bob",
+      "start_time": 3.5,
+      "end_time": 7.8,
+      "text": "Thanks Alice. I'd like to discuss the quarterly results",
+      "audio_file": null,
+      "quality": 0.95
+    },
+    {
+      "speaker_id": "speaker_charlie",
+      "start_time": 8.1,
+      "end_time": 12.4,
+      "text": "Before we get to that, can we review the action items from last week?",
+      "audio_file": null,
+      "quality": 0.9
+    },
+    {
+      "speaker_id": "speaker_alice",
+      "start_time": 12.7,
+      "end_time": 16.3,
+      "text": "Of course Charlie. Let me pull up the notes from our previous meeting",
+      "audio_file": null,
+      "quality": 1.0
+    },
+    {
+      "speaker_id": "speaker_bob",
+      "start_time": 16.5,
+      "end_time": 19.2,
+      "text": "I think we completed most of them",
+      "audio_file": null,
+      "quality": 0.85
+    },
+    {
+      "speaker_id": "speaker_charlie",
+      "start_time": 19.8,
+      "end_time": 24.1,
+      "text": "Yes, except for the customer feedback analysis that was assigned to me",
+      "audio_file": null,
+      "quality": 0.9
+    },
+    {
+      "speaker_id": "speaker_alice",
+      "start_time": 24.3,
+      "end_time": 28.7,
+      "text": "No problem Charlie. Can you give us a quick update on where you are with that?",
+      "audio_file": null,
+      "quality": 0.95
+    },
+    {
+      "speaker_id": "speaker_charlie",
+      "start_time": 29.0,
+      "end_time": 35.5,
+      "text": "I've collected about 80% of the responses. I expect to have the full analysis ready by Friday",
+      "audio_file": null,
+      "quality": 0.9
+    }
+  ],
+  "total_speakers": 3,
+  "duration": 36.0,
+  "sample_rate": 16000,
+  "metadata": {
+    "recording_date": "2025-08-22",
+    "meeting_type": "weekly_standup",
+    "audio_quality": "high",
+    "background_noise": "minimal",
+    "recording_device": "zoom_meeting",
+    "notes": "Clear audio, no overlapping speech, good speaker separation"
+  }
+}

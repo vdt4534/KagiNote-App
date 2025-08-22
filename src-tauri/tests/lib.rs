@@ -6,3 +6,6 @@ use kaginote_lib;
 
 // Re-export modules for tests to use
 pub use kaginote_lib::*;
+
+// Test modules
+pub mod diarization_realtime;

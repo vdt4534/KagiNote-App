@@ -23,3 +23,4 @@ dist-ssr
 *.sln
 *.sw?
 src-tauri/resources/models/diarization/*.onnx
+src-tauri/tests/diarization_realtime/test_audio/librispeech_sample.tar.gz

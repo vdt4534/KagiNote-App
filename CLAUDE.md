@@ -650,3 +650,173 @@ Implements text similarity checking to prevent repeated partial transcriptions:
 - Uses Jaccard similarity coefficient
 - Checks for exact substring matches
 - 80% similarity threshold for duplicate detection
+
+## Speaker Diarization Real-Time Testing Infrastructure (August 2025)
+
+### **✅ COMPLETE TEST INFRASTRUCTURE AVAILABLE**
+
+A comprehensive test infrastructure has been created for testing and optimizing speaker diarization in real-time scenarios. This allows for rapid experimentation and validation of different diarization approaches.
+
+### **Test Infrastructure Location**
+```
+src-tauri/tests/diarization_realtime/
+├── test_audio/                 # Real audio files (LibriSpeech samples)
+├── ground_truth/               # JSON annotations for validation
+├── reports/                    # HTML test reports
+├── audio_playback_simulator.rs # Real-time audio streaming simulator
+├── validation.rs              # DER metrics and validation framework
+├── test_scenarios.rs          # 10+ test scenarios
+├── create_test_audio.rs       # Synthetic audio generator
+├── integration_test.rs        # End-to-end testing
+├── performance_tests.rs       # Latency and throughput tests
+├── accuracy_tests.rs          # Speaker identification accuracy
+├── memory_tests.rs           # Memory usage and leak detection
+├── stress_tests.rs           # Resource exhaustion tests
+├── benchmark.rs              # Performance benchmarking
+├── download_test_data.sh     # Audio download script
+├── run_tests_simple.sh       # Test execution script
+└── README.md                 # Detailed documentation
+```
+
+### **Available Test Resources**
+
+**Real Audio Files (Downloaded August 2025):**
+- **LibriSpeech test-clean**: 346MB dataset with 20+ speakers
+- **Sample files**: 16kHz mono WAV, 10-30 second clips
+- **Multi-speaker simulations**: Created from different speakers
+- **Ground truth annotations**: JSON files with speaker segments
+
+**Test Scenarios:**
+1. Single speaker baseline (LibriSpeech)
+2. 2-speaker conversation
+3. 3-4 speaker meeting
+4. Overlapping speech
+5. Rapid speaker switching
+6. Long silence periods
+7. Noisy environment
+8. 8-speaker conference
+9. Whisper speech (low amplitude)
+10. Mixed gender speakers
+
+### **Key Testing Components**
+
+**Audio Playback Simulator:**
+- Simulates real-time microphone input
+- Streams audio in 100ms chunks
+- Supports WAV, MP3, FLAC formats
+- Configurable playback speed and chunk size
+- Matches actual `audio/capture.rs` behavior
+
+**Validation Framework:**
+- **DER (Diarization Error Rate)** calculation
+- **Precision, Recall, F1 scores**
+- **Speaker consistency validation**
+- **Performance metrics** (CPU, memory, latency)
+- **HTML report generation**
+- **CI/CD compatible output**
+
+**Performance Targets:**
+| Metric | Target | Test Coverage |
+|--------|--------|---------------|
+| Real-time Factor | <1.5x | ✅ Ready |
+| Latency | <2.0s | ✅ Ready |
+| Memory | <500MB | ✅ Ready |
+| DER | <15% | ✅ Ready |
+| Accuracy | >85% | ✅ Ready |
+
+### **How to Use the Test Infrastructure**
+
+**Quick Start:**
+```bash
+# Navigate to project
+cd "/Users/david/Library/Mobile Documents/com~apple~CloudDocs/Coding projects/KagiNote 2/KagiNote"
+
+# Make scripts executable
+chmod +x src-tauri/tests/diarization_realtime/*.sh
+
+# Download/generate test audio
+./src-tauri/tests/diarization_realtime/download_test_data.sh
+
+# Run tests
+./src-tauri/tests/diarization_realtime/run_tests_simple.sh
+
+# View HTML report
+open src-tauri/tests/diarization_realtime/reports/test_report.html
+```
+
+**Individual Test Commands:**
+```bash
+# Test validation framework
+cargo test validation_framework_test --manifest-path src-tauri/Cargo.toml
+
+# Test audio simulator
+cargo test audio_simulator_unit_test --manifest-path src-tauri/Cargo.toml
+
+# Test with real audio
+cargo test diarization_realtime_test --manifest-path src-tauri/Cargo.toml
+
+# Run performance tests
+cargo test diarization_realtime::performance_tests --manifest-path src-tauri/Cargo.toml
+
+# Run accuracy tests
+cargo test diarization_realtime::accuracy_tests --manifest-path src-tauri/Cargo.toml
+```
+
+### **Test Development Workflow**
+
+1. **Experiment with diarization approaches:**
+   - Use real LibriSpeech audio files
+   - Test with different speaker counts
+   - Validate accuracy with ground truth
+
+2. **Optimize performance:**
+   - Monitor real-time factor
+   - Track memory usage
+   - Measure processing latency
+
+3. **Validate accuracy:**
+   - Calculate DER against ground truth
+   - Test speaker consistency
+   - Handle edge cases (overlaps, silence)
+
+4. **Generate reports:**
+   - HTML reports with metrics
+   - JSON output for CI/CD
+   - Performance trend analysis
+
+### **Test Infrastructure Benefits**
+
+- **TDD Approach**: Tests drive implementation
+- **Real Audio**: LibriSpeech samples provide realistic testing
+- **Comprehensive Metrics**: Industry-standard DER plus custom metrics
+- **Rapid Iteration**: Quick feedback on changes
+- **Production Ready**: Tests match production requirements
+- **Isolated Environment**: Safe experimentation without affecting main code
+
+### **Important Files for Testing**
+
+**Test Audio Samples:**
+- `test_audio/1089-134686-0000.wav` - Female speaker, 10.4s
+- `test_audio/6930-75918-0000.wav` - Different speaker
+- `test_audio/harvard.wav` - Harvard sentences, 33.6s
+- 20+ additional LibriSpeech samples
+
+**Ground Truth Data:**
+- `ground_truth/librispeech_test.json` - Single speaker
+- `ground_truth/example_2speakers.json` - Conversation
+- `ground_truth/example_3speakers_meeting.json` - Meeting
+- `ground_truth/example_overlapping_speech.json` - Overlaps
+
+**Test Reports:**
+- `reports/test_report.html` - Comprehensive test results
+- `reports/*.json` - Machine-readable metrics
+
+### **Extending the Tests**
+
+To add new test scenarios:
+1. Add audio files to `test_audio/`
+2. Create ground truth in `ground_truth/`
+3. Add test case to relevant test file
+4. Run tests and check reports
+
+The infrastructure is designed for easy extension and experimentation with different diarization approaches.

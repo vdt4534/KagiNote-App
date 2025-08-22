@@ -1,0 +1,62 @@
+{
+  "audio_file": "test_overlapping_speech.wav",
+  "duration": 25.0,
+  "total_speakers": 2,
+  "metadata": {
+    "scenario_type": "overlapping_speech",
+    "description": "Multiple speakers talking simultaneously - challenging scenario",
+    "created_by": "KagiNote Test Suite",
+    "creation_date": "2025-08-22",
+    "audio_format": "16kHz, 16-bit, mono",
+    "language": "en-US",
+    "environment": "synthetic_debate",
+    "speaker_0_profile": "synthetic_261Hz_male_assertive",
+    "speaker_1_profile": "synthetic_329Hz_female_assertive",
+    "overlap_percentage": 40.0,
+    "challenge_level": "high"
+  },
+  "segments": [
+    {
+      "speaker_id": "speaker_0",
+      "start_time": 0.0,
+      "end_time": 5.0,
+      "text": "I think we should consider all options.",
+      "confidence": 0.93
+    },
+    {
+      "speaker_id": "speaker_1",
+      "start_time": 4.0,
+      "end_time": 9.0,
+      "text": "Actually, I disagree with that approach.",
+      "confidence": 0.88
+    },
+    {
+      "speaker_id": "speaker_0",
+      "start_time": 8.0,
+      "end_time": 13.0,
+      "text": "But we need to think about the budget.",
+      "confidence": 0.85
+    },
+    {
+      "speaker_id": "speaker_1",
+      "start_time": 13.5,
+      "end_time": 18.0,
+      "text": "The budget is exactly why we can't do this.",
+      "confidence": 0.91
+    },
+    {
+      "speaker_id": "speaker_0",
+      "start_time": 17.0,
+      "end_time": 22.0,
+      "text": "Let me explain my reasoning.",
+      "confidence": 0.87
+    },
+    {
+      "speaker_id": "speaker_1",
+      "start_time": 22.5,
+      "end_time": 25.0,
+      "text": "I'm listening.",
+      "confidence": 0.94
+    }
+  ]
+}

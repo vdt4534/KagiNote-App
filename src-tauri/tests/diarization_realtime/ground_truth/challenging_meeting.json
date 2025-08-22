@@ -1,0 +1,105 @@
+{
+  "recording_id": "challenging_meeting_002",
+  "segments": [
+    {
+      "speaker_id": "speaker_david",
+      "start_time": 0.0,
+      "end_time": 4.2,
+      "text": "We need to decide on the product roadmap for next quarter",
+      "audio_file": null,
+      "quality": 0.9
+    },
+    {
+      "speaker_id": "speaker_emma",
+      "start_time": 4.5,
+      "end_time": 8.1,
+      "text": "I think we should prioritize the mobile app features",
+      "audio_file": null,
+      "quality": 0.85
+    },
+    {
+      "speaker_id": "speaker_frank",
+      "start_time": 7.8,
+      "end_time": 11.2,
+      "text": "Actually, I disagree. We should focus on backend scalability",
+      "audio_file": null,
+      "quality": 0.8
+    },
+    {
+      "speaker_id": "speaker_emma",
+      "start_time": 10.9,
+      "end_time": 14.5,
+      "text": "But our users are complaining about the mobile experience",
+      "audio_file": null,
+      "quality": 0.7
+    },
+    {
+      "speaker_id": "speaker_david",
+      "start_time": 14.2,
+      "end_time": 17.8,
+      "text": "Let's look at the data to make this decision",
+      "audio_file": null,
+      "quality": 0.9
+    },
+    {
+      "speaker_id": "speaker_frank",
+      "start_time": 17.5,
+      "end_time": 21.3,
+      "text": "The performance metrics show we're hitting limits",
+      "audio_file": null,
+      "quality": 0.8
+    },
+    {
+      "speaker_id": "speaker_emma",
+      "start_time": 20.8,
+      "end_time": 24.1,
+      "text": "Yes but user satisfaction scores are dropping",
+      "audio_file": null,
+      "quality": 0.75
+    },
+    {
+      "speaker_id": "speaker_david",
+      "start_time": 24.5,
+      "end_time": 28.9,
+      "text": "Both are valid concerns. Maybe we can address both simultaneously",
+      "audio_file": null,
+      "quality": 0.9
+    },
+    {
+      "speaker_id": "speaker_frank",
+      "start_time": 28.6,
+      "end_time": 32.2,
+      "text": "How would we resource that? We only have two developers",
+      "audio_file": null,
+      "quality": 0.8
+    },
+    {
+      "speaker_id": "speaker_emma",
+      "start_time": 31.8,
+      "end_time": 35.5,
+      "text": "We could bring in contractors for the mobile work",
+      "audio_file": null,
+      "quality": 0.75
+    }
+  ],
+  "total_speakers": 3,
+  "duration": 36.0,
+  "sample_rate": 16000,
+  "metadata": {
+    "recording_date": "2025-08-22",
+    "meeting_type": "product_planning",
+    "audio_quality": "medium",
+    "background_noise": "moderate",
+    "recording_device": "conference_room_microphone",
+    "notes": "Some overlapping speech, passionate discussion, multiple interruptions",
+    "overlaps_detected": [
+      {"start": 7.8, "end": 8.1, "speakers": ["speaker_emma", "speaker_frank"]},
+      {"start": 10.9, "end": 11.2, "speakers": ["speaker_frank", "speaker_emma"]},
+      {"start": 14.2, "end": 14.5, "speakers": ["speaker_emma", "speaker_david"]},
+      {"start": 17.5, "end": 17.8, "speakers": ["speaker_david", "speaker_frank"]},
+      {"start": 20.8, "end": 21.3, "speakers": ["speaker_frank", "speaker_emma"]},
+      {"start": 28.6, "end": 28.9, "speakers": ["speaker_david", "speaker_frank"]},
+      {"start": 31.8, "end": 32.2, "speakers": ["speaker_frank", "speaker_emma"]}
+    ]
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "audio_file": "1089-134686-0000.wav",
+  "duration": 10.435,
+  "sample_rate": 16000,
+  "channels": 1,
+  "description": "LibriSpeech test-clean sample - single speaker reading audiobook",
+  "total_speakers": 1,
+  "segments": [
+    {
+      "speaker_id": "speaker_1089",
+      "start_time": 0.0,
+      "end_time": 10.435,
+      "text": "Continuous speech from single speaker",
+      "confidence": 1.0
+    }
+  ],
+  "metadata": {
+    "source": "LibriSpeech",
+    "subset": "test-clean",
+    "speaker": "1089",
+    "chapter": "134686",
+    "utterance": "0000",
+    "gender": "female",
+    "test_purpose": "Single speaker baseline test"
+  }
+}
