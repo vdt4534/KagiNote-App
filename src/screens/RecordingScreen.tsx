@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { cn } from '@/lib/utils';
-import { Card, CardHeader, CardBody } from '@/components/ui/Card';
+import { Card, CardHeader, CardBody } from '@/components/ui/card-compat';
 import { Icon } from '@/components/ui/Icon';
 import { TranscriptView, TranscriptSegment } from '@/components/features/TranscriptView';
 import { ControlBar } from '@/components/features/ControlBar';

@@ -14,9 +14,10 @@ KagiNote is a privacy-focused meeting transcription application built with Tauri
 - Frontend communicates with Rust backend through Tauri's invoke API
 
 **Key Dependencies:**
-- **Frontend**: React 19, Radix UI themes, Tailwind CSS v3, WaveSurfer.js for audio visualization
+- **Frontend**: React 19, shadcn/ui components, Radix UI primitives, Tailwind CSS v3, WaveSurfer.js for audio visualization
 - **Backend**: Tauri v2, cpal for audio capture, hound for audio file handling, tokio for async operations
 - **Build Tools**: Vite for frontend bundling, PostCSS for CSS processing, TypeScript compiler
+- **UI Components**: shadcn/ui (New York style) with Radix UI primitives, class-variance-authority for variants
 - **Styling**: Tailwind CSS v3.4.17 with PostCSS and Autoprefixer integration
 
 ## Development Commands
@@ -210,8 +211,10 @@ The app is designed for audio capture and processing with universal device compa
 
 **Technical Stack:**
 - Tailwind CSS v3.4.17 for utility-first styling
+- shadcn/ui components (New York style) for modern UI components
+- Radix UI primitives for accessibility-first component foundation
+- Class Variance Authority (CVA) for component variant management
 - Custom design tokens in tailwind.config.js
-- Radix UI colors for consistent theming
 - Responsive design with mobile-first approach
 - Dark mode support via CSS variables
 
@@ -222,12 +225,25 @@ For complete design specifications, component patterns, and implementation guide
 - Production-ready implementation with comprehensive test coverage
 - Frontend uses modern React 19 with functional components and hooks
 - TypeScript strict mode enabled with full type safety
+- **UI Component System**: shadcn/ui components with compatibility layer for gradual migration
+- **Component Architecture**: `/components/ui/compat.ts` provides smooth migration path from custom to shadcn/ui
+- **Mobile Responsiveness**: Sheet-based mobile navigation with responsive layouts
 - **Tailwind CSS v3.4.17**: Utility-first CSS framework with PostCSS integration
-- **Design System**: Tailwind utilities work seamlessly with custom UI components
-- **Styling Architecture**: Custom CSS + Tailwind utilities for rapid UI development
+- **Design System**: Tailwind utilities work seamlessly with shadcn/ui components
+- **Styling Architecture**: shadcn/ui + Tailwind utilities for rapid UI development
 - **Cross-platform CSS**: Tailwind generates consistent styles across all platforms
 - Privacy-first architecture validated through security audit
 - Cross-platform compatibility tested on Windows, macOS, Linux
+
+## UI Component Migration (December 2024)
+
+**shadcn/ui Integration:**
+- **Implemented Components**: Button, Badge, Input, Card, Select, Sheet, Label
+- **Configuration**: New York style with TypeScript and Tailwind CSS
+- **Compatibility Layer**: `/components/ui/compat.ts` exports both new and legacy components
+- **Migration Strategy**: Gradual replacement with backward compatibility preserved
+- **Mobile Navigation**: Sheet component for responsive sidebar on mobile devices
+- **Component Variants**: CVA-based variant system with KagiNote design tokens mapped
 
 ## Parallel Development with Git Worktrees
 

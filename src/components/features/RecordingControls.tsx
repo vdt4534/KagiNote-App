@@ -1,8 +1,8 @@
 import React from 'react';
 import { cn, formatDuration } from '@/lib/utils';
-import { Button } from '@/components/ui/Button';
+import { Button } from '@/components/ui/button-compat';
 import { Icon } from '@/components/ui/Icon';
-import { Badge } from '@/components/ui/Badge';
+import { Badge } from '@/components/ui/badge-compat';
 
 export interface RecordingControlsProps {
   isRecording: boolean;

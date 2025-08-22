@@ -8,6 +8,7 @@ import { RecordingScreen } from "./screens/RecordingScreen";
 import { TranscriptSegment, SpeakerInfo } from "./components/features/TranscriptView";
 import { TranscriptionController, FinalTranscriptionResult, TranscriptionError, TranscriptionUpdateEvent, TranscriptionConfig, TranscriptionControllerRef } from "./components/features/TranscriptionController";
 import { MeetingFile } from "./screens/Dashboard";
+import { ToastProvider } from "./components/ui/ToastContainer";
 import './styles/globals.css';
 
 type AppScreen = 'dashboard' | 'recording' | 'meeting-review';
@@ -28,6 +29,9 @@ interface AppState {
   errors: TranscriptionError[];
   showNewMeetingModal: boolean;
   meetings: MeetingFile[];
+  diarizationStatus?: any;
+  speakerActivities?: any[];
+  hasOverlappingSpeech?: boolean;
 }
 
 function App() {
@@ -697,6 +701,20 @@ function App() {
     );
   }
 
+  // Handle navigation between screens
+  const handleNavigation = (screen: string) => {
+    if (screen === 'dashboard') {
+      setAppState(prev => ({ ...prev, currentScreen: 'dashboard' }));
+    } else if (screen === 'recording') {
+      // Open new meeting modal instead of directly going to recording
+      setAppState(prev => ({ ...prev, showNewMeetingModal: true }));
+    } else if (screen === 'transcripts') {
+      // For now, just go to dashboard (transcripts are shown there)
+      setAppState(prev => ({ ...prev, currentScreen: 'dashboard' }));
+    }
+    // Settings and other screens can be implemented later
+  };
+
   return (
     <ToastProvider>
       <AppLayout
@@ -705,7 +723,8 @@ function App() {
         modelInfo={getModelInfo()}
         recordingInfo={getRecordingInfo()}
         systemInfo={{ privacy: true, cpu: '15%', memory: '2.1GB' }}
-        diarizationStatus={appState.diarizationStatus}
+        onNavigate={handleNavigation}
+        currentScreen={appState.currentScreen}
       >
         {renderCurrentScreen()}
       </AppLayout>

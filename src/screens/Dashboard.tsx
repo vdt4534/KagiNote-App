@@ -1,10 +1,19 @@
 import React, { useState } from 'react';
 import { cn, formatDate, formatDuration } from '@/lib/utils';
-import { Button } from '@/components/ui/Button';
-import { Input } from '@/components/ui/Input';
-import { Card, CardHeader, CardBody } from '@/components/ui/Card';
-import { Icon } from '@/components/ui/Icon';
-import { Badge } from '@/components/ui/Badge';
+// Using compatibility layer for smooth migration to shadcn/ui
+import { 
+  Button, 
+  Input, 
+  Card, 
+  CardBody,
+  Icon, 
+  Badge,
+  Select, 
+  SelectContent, 
+  SelectItem, 
+  SelectTrigger, 
+  SelectValue 
+} from '@/components/ui/compat';
 
 export interface MeetingFile {
   id: string;
@@ -106,18 +115,18 @@ export const Dashboard: React.FC<DashboardProps> = ({
   const getQualityColor = (quality: string) => {
     switch (quality) {
       case 'High Accuracy':
-        return 'secondary';
+        return 'success';
       case 'Turbo':
         return 'warning';
       default:
-        return 'neutral';
+        return 'secondary';
     }
   };
 
   const getAccuracyColor = (accuracy: number) => {
-    if (accuracy >= 95) return 'secondary';
+    if (accuracy >= 95) return 'success';
     if (accuracy >= 90) return 'warning';
-    return 'error';
+    return 'destructive';
   };
 
   return (
@@ -139,19 +148,18 @@ export const Dashboard: React.FC<DashboardProps> = ({
             value={searchQuery}
             onChange={(e) => handleSearch(e.target.value)}
             placeholder="Search across all meetings..."
-            className="w-full"
+            className="w-full sm:max-w-xl"
             disabled={isLoading}
           />
         </div>
 
-        {/* Quick Actions */}
-        <div className="flex gap-4">
+        {/* Quick Actions - Responsive layout */}
+        <div className="flex flex-col sm:flex-row gap-3">
           <Button
             onClick={onNewMeeting}
-            variant="primary"
-            size="lg"
+            size="default"
             disabled={isLoading}
-            className="flex items-center gap-2"
+            className="w-full sm:w-auto flex items-center justify-center gap-2"
           >
             <Icon name="plus" size="base" />
             New Meeting
@@ -159,20 +167,20 @@ export const Dashboard: React.FC<DashboardProps> = ({
           
           <Button
             onClick={onImportFile}
-            variant="secondary"
-            size="lg"
+            variant="outline"
+            size="default"
             disabled={isLoading}
-            className="flex items-center gap-2"
+            className="w-full sm:w-auto flex items-center justify-center gap-2"
           >
             <Icon name="upload" size="base" />
             Import Audio
           </Button>
           
           <Button
-            variant="ghost"
-            size="lg"
+            variant="outline"
+            size="default"
             disabled={isLoading}
-            className="flex items-center gap-2"
+            className="w-full sm:w-auto flex items-center justify-center gap-2"
           >
             <Icon name="cog" size="base" />
             Settings
@@ -182,23 +190,23 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
       {/* Meetings Section */}
       <div className="flex-1 flex flex-col min-h-0">
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 gap-3">
           <h2 className="text-xl font-semibold text-neutral-900 dark:text-neutral-100">
             Your Meetings
           </h2>
           
           <div className="flex items-center gap-2">
             <span className="text-sm text-neutral-500 dark:text-neutral-400">Sort:</span>
-            <select
-              value={sortBy}
-              onChange={(e) => setSortBy(e.target.value as 'date' | 'title' | 'duration')}
-              className="text-sm border border-neutral-300 dark:border-neutral-600 rounded-md px-2 py-1 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100"
-              disabled={isLoading}
-            >
-              <option value="date">Recent</option>
-              <option value="title">Title</option>
-              <option value="duration">Duration</option>
-            </select>
+            <Select value={sortBy} onValueChange={(value) => setSortBy(value as 'date' | 'title' | 'duration')} disabled={isLoading}>
+              <SelectTrigger className="w-32">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="date">Recent</SelectItem>
+                <SelectItem value="title">Title</SelectItem>
+                <SelectItem value="duration">Duration</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
         </div>
 
@@ -209,21 +217,23 @@ export const Dashboard: React.FC<DashboardProps> = ({
               <div className="animate-spin rounded-full h-8 w-8 border-2 border-primary-500 border-t-transparent" />
             </div>
           ) : sortedMeetings.length === 0 ? (
-            <Card>
+            <Card className="border-2 border-dashed border-neutral-300 dark:border-neutral-700 bg-neutral-50 dark:bg-neutral-800/50">
               <CardBody>
-                <div className="text-center py-8">
-                  <Icon name="document-text" size="xl" className="mx-auto mb-4 text-neutral-400" />
-                  <h3 className="text-lg font-medium text-neutral-900 dark:text-neutral-100 mb-2">
+                <div className="text-center py-12">
+                  <div className="w-20 h-20 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center mx-auto mb-6">
+                    <Icon name="document-text" size="xl" className="text-blue-600 dark:text-blue-400" />
+                  </div>
+                  <h3 className="text-xl font-semibold text-neutral-900 dark:text-neutral-100 mb-3">
                     {searchQuery ? 'No meetings found' : 'No meetings yet'}
                   </h3>
-                  <p className="text-neutral-500 dark:text-neutral-400 mb-4">
+                  <p className="text-neutral-600 dark:text-neutral-400 mb-6 max-w-sm mx-auto">
                     {searchQuery 
                       ? `No meetings match "${searchQuery}". Try a different search term.`
                       : 'Start by creating your first meeting or importing an audio file.'
                     }
                   </p>
                   {!searchQuery && (
-                    <Button onClick={onNewMeeting} variant="primary">
+                    <Button onClick={onNewMeeting} size="lg" className="flex items-center gap-2">
                       <Icon name="plus" size="base" />
                       Create First Meeting
                     </Button>
@@ -283,7 +293,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
                             style={{ width: `${meeting.accuracy}%` }}
                           />
                         </div>
-                        <Badge variant={getAccuracyColor(meeting.accuracy)} size="sm">
+                        <Badge variant={getAccuracyColor(meeting.accuracy) as any}>
                           {meeting.accuracy}% accuracy
                         </Badge>
                       </div>
@@ -293,10 +303,10 @@ export const Dashboard: React.FC<DashboardProps> = ({
                       </p>
 
                       <div className="flex items-center gap-2">
-                        <Badge variant={getQualityColor(meeting.quality)} size="sm">
+                        <Badge variant={getQualityColor(meeting.quality) as any}>
                           {meeting.quality}
                         </Badge>
-                        <Badge variant="neutral" size="sm">
+                        <Badge variant="outline">
                           {meeting.language}
                         </Badge>
                       </div>

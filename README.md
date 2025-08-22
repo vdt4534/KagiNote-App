@@ -2,7 +2,7 @@
 
 **Privacy-focused meeting transcription with professional UI/UX - runs entirely on your device.**
 
-KagiNote V2 is a **production-ready** desktop application built with Tauri v2, React 19, and Tailwind CSS that provides real-time meeting transcription with complete privacy - no audio data ever leaves your machine. Features a modern dashboard with chat-style speaker separation, audio file import, and persistent meeting management with a privacy-first design language.
+KagiNote V2 is a **production-ready** desktop application built with Tauri v2, React 19, shadcn/ui components, and Tailwind CSS that provides real-time meeting transcription with complete privacy - no audio data ever leaves your machine. Features a modern dashboard with chat-style speaker separation, audio file import, and persistent meeting management with a privacy-first design language.
 
 ## V2 Features (August 2025)
 
@@ -27,6 +27,8 @@ KagiNote V2 is a **production-ready** desktop application built with Tauri v2, R
 - **💾 Persistent Storage**: All meetings saved to localStorage with metadata
 - **🎨 Professional Design System**: Privacy-first visual language with business aesthetics
 - **🖥️ Platform-Aware**: Native look on macOS/Windows with platform-specific adaptations
+- **📱 Mobile Responsive**: Full mobile support with Sheet-based navigation
+- **🧩 shadcn/ui Components**: Modern, accessible UI components with Radix UI primitives
 - **📱 Real-time Display**: Live transcription with audio visualization
 - **🗂️ Meeting Management**: Create, save, delete, and review transcripts
 - **🎭 Real-time Speaker Diarization**: Identify up to 8 speakers using state-of-the-art 3D-Speaker ERes2NetV2 models
@@ -81,12 +83,15 @@ npm run tauri build
 - **Enhanced error diagnostics** with device-specific troubleshooting guidance
 - **Audio buffering** (1.5s minimum) for reliable transcription quality
 
-**Frontend (React 19)**
+**Frontend (React 19 + shadcn/ui)**
+- **Modern UI Components** using shadcn/ui with Radix UI primitives for accessibility
+- **Responsive Design** with mobile-first approach and Sheet-based mobile navigation
 - **Real-time transcription display** with live text updates from actual AI models
 - **Model status feedback** showing download progress and cache status
 - **Audio visualization** connected to real backend audio levels
 - **Emergency stop controls** for stuck microphone recovery
 - **Session duration tracking** and results display
+- **Component Compatibility Layer** for smooth migration from custom to shadcn/ui components
 
 ## Performance
 
