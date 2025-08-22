@@ -1920,13 +1920,15 @@ pub async fn import_speaker_profiles(
 /// Load test seed data for development and testing
 #[tauri::command]
 pub async fn load_test_seed_data(state: State<'_, AppState>) -> Result<String, String> {
-    let db_guard = state.speaker_database.lock().await;
-    let db = db_guard.as_ref()
-        .ok_or("Speaker storage not initialized")?;
-    
-    let seed_manager = SeedManager::new(db.clone());
-    let result = seed_manager.load_test_data().await
-        .map_err(|e| format!("Failed to load test seed data: {}", e))?;
+    let result = {
+        let db_guard = state.speaker_database.lock().await;
+        let db = db_guard.as_ref()
+            .ok_or("Speaker storage not initialized")?;
+        
+        let seed_manager = SeedManager::new(db.clone());
+        seed_manager.load_test_data().await
+            .map_err(|e| format!("Failed to load test seed data: {}", e))?
+    };
     
     // Rebuild embedding index with new data
     if let Err(e) = rebuild_embedding_index(state).await {
@@ -1939,13 +1941,15 @@ pub async fn load_test_seed_data(state: State<'_, AppState>) -> Result<String, S
 /// Create comprehensive test dataset for development
 #[tauri::command]
 pub async fn create_comprehensive_test_dataset(state: State<'_, AppState>) -> Result<String, String> {
-    let db_guard = state.speaker_database.lock().await;
-    let db = db_guard.as_ref()
-        .ok_or("Speaker storage not initialized")?;
-    
-    let seed_manager = SeedManager::new(db.clone());
-    let result = seed_manager.create_comprehensive_test_dataset().await
-        .map_err(|e| format!("Failed to create comprehensive test dataset: {}", e))?;
+    let result = {
+        let db_guard = state.speaker_database.lock().await;
+        let db = db_guard.as_ref()
+            .ok_or("Speaker storage not initialized")?;
+        
+        let seed_manager = SeedManager::new(db.clone());
+        seed_manager.create_comprehensive_test_dataset().await
+            .map_err(|e| format!("Failed to create comprehensive test dataset: {}", e))?
+    };
     
     // Rebuild embedding index with new data
     if let Err(e) = rebuild_embedding_index(state).await {

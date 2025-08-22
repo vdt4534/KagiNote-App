@@ -175,9 +175,9 @@ impl SeedManager {
                         color,
                         rand::thread_rng().gen_range(1..20), // identification_count
                         0.7 + (rand::thread_rng().gen::<f32>() * 0.2), // confidence_threshold 0.7-0.9
-                        if gender == "male" { 80.0 } else { 150.0 }, // pitch_range_min
-                        if gender == "male" { 200.0 } else { 350.0 }, // pitch_range_max
-                        if gender == "male" { 130.0 } else { 220.0 }, // pitch_mean
+                        if *gender == "male" { 80.0 } else { 150.0 }, // pitch_range_min
+                        if *gender == "male" { 200.0 } else { 350.0 }, // pitch_range_max
+                        if *gender == "male" { 130.0 } else { 220.0 }, // pitch_mean
                         120.0 + (rand::thread_rng().gen::<f32>() * 80.0), // speaking_rate 120-200 WPM
                         format!(r#"{{"clarity": {:.2}, "stability": {:.2}, "brightness": {:.2}}}"#,
                             0.7 + (rand::thread_rng().gen::<f32>() * 0.3),
@@ -227,6 +227,8 @@ impl SeedManager {
                 ("all-hands", "All-Hands Company Meeting", vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9]),
             ];
             
+            let unique_meeting_count = meetings.len();
+            
             for (meeting_id, meeting_name, participant_indices) in meetings {
                 for &speaker_idx in &participant_indices {
                     let speaker_id = format!("test-speaker-{:03}", speaker_idx + 1);
@@ -267,7 +269,7 @@ impl SeedManager {
             
             let summary = format!(
                 "Comprehensive test dataset created:\n- {} speaker profiles\n- {} voice embeddings\n- {} meeting participations\n- {} unique meetings",
-                profile_count, embedding_count, meeting_count, meetings.len()
+                profile_count, embedding_count, meeting_count, unique_meeting_count
             );
 
             tracing::info!("{}", summary);

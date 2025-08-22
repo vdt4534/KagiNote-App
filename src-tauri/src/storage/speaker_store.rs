@@ -232,7 +232,7 @@ impl SpeakerStore {
         let speaker_id_str = uuid_to_string(&speaker_id);
         let rows_affected = self.db.execute(
             "DELETE FROM speaker_profiles WHERE id = ?1",
-            [&speaker_id_str],
+            [speaker_id_str],
         ).await?;
 
         Ok(rows_affected > 0)
@@ -256,15 +256,15 @@ impl SpeakerStore {
                     id, speaker_id, vector, dimensions, model_name,
                     quality_score, duration_seconds, created_at
                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-                [
-                    &uuid_to_string(&embedding_clone.id),
-                    &uuid_to_string(&embedding_clone.speaker_id),
-                    &vector_blob,
-                    &embedding_clone.dimensions.to_string(),
-                    &embedding_clone.model_name,
-                    &embedding_clone.quality_score.to_string(),
-                    &embedding_clone.duration_seconds.to_string(),
-                    &embedding_clone.created_at.to_rfc3339(),
+                rusqlite::params![
+                    uuid_to_string(&embedding_clone.id),
+                    uuid_to_string(&embedding_clone.speaker_id),
+                    vector_blob,
+                    embedding_clone.dimensions,
+                    embedding_clone.model_name,
+                    embedding_clone.quality_score,
+                    embedding_clone.duration_seconds,
+                    embedding_clone.created_at.to_rfc3339(),
                 ],
             ).context("Failed to insert voice embedding")?;
 

@@ -67,7 +67,7 @@ pub fn run() {
             let app_handle = app.handle().clone();
             
             // Perform any initialization here
-            tauri::async_runtime::spawn(async {
+            tauri::async_runtime::spawn(async move {
                 // Initialize audio and ASR systems
                 if let Err(e) = initialize_systems().await {
                     tracing::error!("Failed to initialize systems: {}", e);
