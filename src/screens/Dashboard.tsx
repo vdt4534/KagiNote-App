@@ -130,14 +130,14 @@ export const Dashboard: React.FC<DashboardProps> = ({
   };
 
   return (
-    <div className={cn('flex flex-col h-full space-y-6', className)}>
+    <div className={cn('flex flex-col h-full space-y-4 sm:space-y-6', className)}>
       {/* Header Section */}
-      <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-3 sm:gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-neutral-900 dark:text-neutral-100">
+          <h1 className="text-2xl sm:text-3xl font-bold text-neutral-900 dark:text-neutral-100">
             Welcome to KagiNote
           </h1>
-          <p className="text-neutral-600 dark:text-neutral-400 mt-1">
+          <p className="text-sm sm:text-base text-neutral-600 dark:text-neutral-400 mt-1">
             100% Local Privacy • No Cloud Required
           </p>
         </div>
@@ -148,7 +148,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
             value={searchQuery}
             onChange={(e) => handleSearch(e.target.value)}
             placeholder="Search across all meetings..."
-            className="w-full sm:max-w-xl"
+            className="w-full sm:max-w-lg lg:max-w-xl"
             disabled={isLoading}
           />
         </div>
@@ -190,15 +190,15 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
       {/* Meetings Section */}
       <div className="flex-1 flex flex-col min-h-0">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-4 gap-3">
-          <h2 className="text-xl font-semibold text-neutral-900 dark:text-neutral-100">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-3 sm:mb-4 gap-2 sm:gap-3">
+          <h2 className="text-lg sm:text-xl font-semibold text-neutral-900 dark:text-neutral-100">
             Your Meetings
           </h2>
           
           <div className="flex items-center gap-2">
-            <span className="text-sm text-neutral-500 dark:text-neutral-400">Sort:</span>
+            <span className="text-sm text-neutral-500 dark:text-neutral-400 hidden sm:inline">Sort:</span>
             <Select value={sortBy} onValueChange={(value) => setSortBy(value as 'date' | 'title' | 'duration')} disabled={isLoading}>
-              <SelectTrigger className="w-32">
+              <SelectTrigger className="w-24 sm:w-32">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -211,7 +211,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
         </div>
 
         {/* Meetings List */}
-        <div className="flex-1 overflow-y-auto space-y-4 scrollbar-thin">
+        <div className="flex-1 overflow-y-auto space-y-3 sm:space-y-4 scrollbar-thin">
           {isLoading ? (
             <div className="flex items-center justify-center h-32">
               <div className="animate-spin rounded-full h-8 w-8 border-2 border-primary-500 border-t-transparent" />
@@ -248,21 +248,21 @@ export const Dashboard: React.FC<DashboardProps> = ({
                 className="hover:shadow-md transition-shadow cursor-pointer group"
                 onClick={() => onOpenMeeting?.(meeting.id)}
               >
-                <CardBody>
-                  <div className="flex items-start gap-4">
+                <CardBody className="p-4 sm:p-6">
+                  <div className="flex items-start gap-3 sm:gap-4">
                     {/* Meeting Icon */}
-                    <div className="flex-shrink-0 w-12 h-12 bg-primary-100 dark:bg-primary-900 rounded-lg flex items-center justify-center">
+                    <div className="flex-shrink-0 w-10 h-10 sm:w-12 sm:h-12 bg-primary-100 dark:bg-primary-900 rounded-lg flex items-center justify-center">
                       <Icon name="document-text" size="lg" className="text-primary-600 dark:text-primary-400" />
                     </div>
 
                     {/* Meeting Info */}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-start justify-between mb-2">
-                        <h3 className="text-lg font-semibold text-neutral-900 dark:text-neutral-100 truncate">
+                        <h3 className="text-base sm:text-lg font-semibold text-neutral-900 dark:text-neutral-100 truncate max-w-full pr-2">
                           {meeting.title}
                         </h3>
                         
-                        <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0 hidden sm:flex">
                           <Button
                             variant="ghost"
                             size="sm"
@@ -278,11 +278,11 @@ export const Dashboard: React.FC<DashboardProps> = ({
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-4 text-sm text-neutral-500 dark:text-neutral-400 mb-2">
+                      <div className="flex flex-wrap items-center gap-2 sm:gap-4 text-xs sm:text-sm text-neutral-500 dark:text-neutral-400 mb-3">
                         <span>{formatDate(meeting.date)}</span>
-                        <span>•</span>
+                        <span className="hidden sm:inline">•</span>
                         <span>{formatDuration(meeting.duration)}</span>
-                        <span>•</span>
+                        <span className="hidden sm:inline">•</span>
                         <span>{meeting.speakers} speakers</span>
                       </div>
 
@@ -293,20 +293,20 @@ export const Dashboard: React.FC<DashboardProps> = ({
                             style={{ width: `${meeting.accuracy}%` }}
                           />
                         </div>
-                        <Badge variant={getAccuracyColor(meeting.accuracy) as any}>
-                          {meeting.accuracy}% accuracy
+                        <Badge variant={getAccuracyColor(meeting.accuracy) as any} className="text-xs whitespace-nowrap">
+                          {meeting.accuracy}%
                         </Badge>
                       </div>
 
-                      <p className="text-neutral-600 dark:text-neutral-400 text-sm mb-3 line-clamp-2">
+                      <p className="text-neutral-600 dark:text-neutral-400 text-xs sm:text-sm mb-3 line-clamp-2">
                         {meeting.preview}
                       </p>
 
-                      <div className="flex items-center gap-2">
-                        <Badge variant={getQualityColor(meeting.quality) as any}>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Badge variant={getQualityColor(meeting.quality) as any} className="text-xs">
                           {meeting.quality}
                         </Badge>
-                        <Badge variant="outline">
+                        <Badge variant="outline" className="text-xs">
                           {meeting.language}
                         </Badge>
                       </div>

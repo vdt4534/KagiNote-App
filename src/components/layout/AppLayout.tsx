@@ -100,7 +100,7 @@ const AppLayout: React.FC<AppLayoutProps> = ({
               <Button
                 variant="ghost"
                 size="icon"
-                className="absolute left-4 top-1/2 -translate-y-1/2 md:hidden"
+                className="absolute right-4 top-1/2 -translate-y-1/2 md:hidden z-50"
               >
                 <Icon name="bars-3" className="h-5 w-5" />
               </Button>
