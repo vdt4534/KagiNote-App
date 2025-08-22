@@ -8,6 +8,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen, UnlistenFn } from '@tauri-apps/api/event';
+import { DiarizationStatus } from '@/components/features/DiarizationStatusIndicator';
+import { SpeakerActivity } from '@/components/features/SpeakerActivityDisplay';
 
 export interface TranscriptionConfig {
   qualityTier: 'standard' | 'high-accuracy' | 'turbo';
@@ -80,11 +82,45 @@ export interface FinalTranscriptionResult {
   processingTimeMs: number;
 }
 
+export interface SpeakerDetectionEvent {
+  sessionId: string;
+  speakerId: string;
+  displayName: string;
+  confidence: number;
+  timestamp: number;
+}
+
+export interface SpeakerUpdateEvent {
+  sessionId: string;
+  speakers: SpeakerActivity[];
+  currentSpeaker?: string;
+  hasOverlappingSpeech: boolean;
+}
+
+export interface DiarizationWarningEvent {
+  sessionId: string;
+  message: string;
+  type: 'low_confidence' | 'model_fallback' | 'processing_delay';
+  recoveryHint?: string;
+}
+
+export interface DiarizationErrorEvent {
+  sessionId: string;
+  message: string;
+  type: 'model_load_failed' | 'onnx_runtime_error' | 'insufficient_memory';
+  severity: 'warning' | 'error' | 'critical';
+  recoveryOptions?: string[];
+}
+
 export interface TranscriptionControllerProps {
   onSessionStart: (sessionId: string) => void;
   onSessionEnd: (result: FinalTranscriptionResult) => void;
   onError: (error: TranscriptionError) => void;
   onTranscriptionUpdate?: (update: TranscriptionUpdateEvent) => void;
+  onSpeakerDetected?: (event: SpeakerDetectionEvent) => void;
+  onSpeakerUpdate?: (event: SpeakerUpdateEvent) => void;
+  onDiarizationWarning?: (event: DiarizationWarningEvent) => void;
+  onDiarizationError?: (event: DiarizationErrorEvent) => void;
   initialConfig?: Partial<TranscriptionConfig>;
 }
 
@@ -113,6 +149,10 @@ export const TranscriptionController: React.FC<TranscriptionControllerProps> = (
   onSessionEnd,
   onError,
   onTranscriptionUpdate,
+  onSpeakerDetected,
+  onSpeakerUpdate,
+  onDiarizationWarning,
+  onDiarizationError,
   initialConfig,
 }) => {
   const [config, setConfig] = useState<TranscriptionConfig>({
@@ -126,6 +166,12 @@ export const TranscriptionController: React.FC<TranscriptionControllerProps> = (
   const [latestTranscription, setLatestTranscription] = useState<string>('');
   const [error, setError] = useState<TranscriptionError | null>(null);
   const [validationError, setValidationError] = useState<string>('');
+  const [diarizationStatus, setDiarizationStatus] = useState<DiarizationStatus>({
+    serviceHealth: 'disabled',
+    modelStatus: 'not_available'
+  });
+  const [speakerActivities, setSpeakerActivities] = useState<SpeakerActivity[]>([]);
+  const [currentSpeaker, setCurrentSpeaker] = useState<string | undefined>();
   
   const unlistenRefs = useRef<UnlistenFn[]>([]);
 
@@ -231,6 +277,86 @@ export const TranscriptionController: React.FC<TranscriptionControllerProps> = (
           }
         });
 
+        // Diarization event listeners
+        const unlistenSpeakerDetected = await listen<SpeakerDetectionEvent>(
+          'speaker-detected',
+          (event) => {
+            const speakerEvent = event.payload;
+            if (speakerEvent.sessionId === currentSession.sessionId) {
+              setDiarizationStatus(prev => ({
+                ...prev,
+                serviceHealth: 'ready',
+                speakerCount: (prev.speakerCount || 0) + 1
+              }));
+              if (onSpeakerDetected) {
+                onSpeakerDetected(speakerEvent);
+              }
+            }
+          }
+        );
+
+        const unlistenSpeakerUpdate = await listen<SpeakerUpdateEvent>(
+          'speaker-update',
+          (event) => {
+            const updateEvent = event.payload;
+            if (updateEvent.sessionId === currentSession.sessionId) {
+              setSpeakerActivities(updateEvent.speakers);
+              setCurrentSpeaker(updateEvent.currentSpeaker);
+              setDiarizationStatus(prev => ({
+                ...prev,
+                speakerCount: updateEvent.speakers.length,
+                confidence: updateEvent.currentSpeaker 
+                  ? updateEvent.speakers.find(s => s.speakerId === updateEvent.currentSpeaker)?.confidenceScore
+                  : undefined
+              }));
+              if (onSpeakerUpdate) {
+                onSpeakerUpdate(updateEvent);
+              }
+            }
+          }
+        );
+
+        const unlistenDiarizationWarning = await listen<DiarizationWarningEvent>(
+          'diarization-warning',
+          (event) => {
+            const warningEvent = event.payload;
+            if (warningEvent.sessionId === currentSession.sessionId) {
+              setDiarizationStatus(prev => ({
+                ...prev,
+                lastError: {
+                  message: warningEvent.message,
+                  type: 'warning',
+                  recoveryHint: warningEvent.recoveryHint
+                }
+              }));
+              if (onDiarizationWarning) {
+                onDiarizationWarning(warningEvent);
+              }
+            }
+          }
+        );
+
+        const unlistenDiarizationError = await listen<DiarizationErrorEvent>(
+          'diarization-error',
+          (event) => {
+            const errorEvent = event.payload;
+            if (errorEvent.sessionId === currentSession.sessionId) {
+              setDiarizationStatus(prev => ({
+                ...prev,
+                serviceHealth: 'error',
+                lastError: {
+                  message: errorEvent.message,
+                  type: errorEvent.severity,
+                  recoveryHint: errorEvent.recoveryOptions?.join(', ')
+                }
+              }));
+              if (onDiarizationError) {
+                onDiarizationError(errorEvent);
+              }
+            }
+          }
+        );
+
         unlistenRefs.current = [
           unlistenTranscription, 
           unlistenStatus, 
@@ -238,7 +364,11 @@ export const TranscriptionController: React.FC<TranscriptionControllerProps> = (
           unlistenModelStatus,
           unlistenModelReady,
           unlistenModelError,
-          unlistenModelProgress
+          unlistenModelProgress,
+          unlistenSpeakerDetected,
+          unlistenSpeakerUpdate,
+          unlistenDiarizationWarning,
+          unlistenDiarizationError
         ];
       } catch (err) {
         console.error('Failed to set up event listeners:', err);
@@ -250,7 +380,7 @@ export const TranscriptionController: React.FC<TranscriptionControllerProps> = (
     return () => {
       unlistenRefs.current.forEach(unlisten => unlisten());
     };
-  }, [currentSession, onTranscriptionUpdate, onError]);
+  }, [currentSession, onTranscriptionUpdate, onError, onSpeakerDetected, onSpeakerUpdate, onDiarizationWarning, onDiarizationError]);
 
   const validateConfiguration = (): string => {
     if (config.languages.length === 0) {
@@ -274,6 +404,19 @@ export const TranscriptionController: React.FC<TranscriptionControllerProps> = (
     setValidationError('');
     setIsStarting(true);
     setError(null);
+    
+    // Initialize diarization status based on config
+    if (config.enableSpeakerDiarization) {
+      setDiarizationStatus({
+        serviceHealth: 'initializing',
+        modelStatus: 'loading'
+      });
+    } else {
+      setDiarizationStatus({
+        serviceHealth: 'disabled',
+        modelStatus: 'not_available'
+      });
+    }
 
     try {
       const sessionId = await invoke<string>('start_transcription', {
@@ -289,6 +432,8 @@ export const TranscriptionController: React.FC<TranscriptionControllerProps> = (
 
       setCurrentSession(session);
       setLatestTranscription('');
+      setSpeakerActivities([]);
+      setCurrentSpeaker(undefined);
       onSessionStart(sessionId);
     } catch (err: any) {
       const error: TranscriptionError = {
@@ -318,6 +463,12 @@ export const TranscriptionController: React.FC<TranscriptionControllerProps> = (
       onSessionEnd(result);
       setCurrentSession(null);
       setLatestTranscription('');
+      setSpeakerActivities([]);
+      setCurrentSpeaker(undefined);
+      setDiarizationStatus({
+        serviceHealth: 'disabled',
+        modelStatus: 'not_available'
+      });
     } catch (err: any) {
       const error: TranscriptionError = {
         type: 'transcription_stop_failed',
@@ -338,6 +489,12 @@ export const TranscriptionController: React.FC<TranscriptionControllerProps> = (
       setCurrentSession(null);
       setLatestTranscription('');
       setError(null);
+      setSpeakerActivities([]);
+      setCurrentSpeaker(undefined);
+      setDiarizationStatus({
+        serviceHealth: 'disabled',
+        modelStatus: 'not_available'
+      });
     } catch (err: any) {
       console.error('Emergency stop failed:', err);
     }

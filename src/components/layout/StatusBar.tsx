@@ -2,6 +2,7 @@ import React from 'react';
 import { cn } from '@/lib/utils';
 import { Icon } from '@/components/ui/Icon';
 import { Badge } from '@/components/ui/Badge';
+import { DiarizationStatus } from '@/components/features/DiarizationStatusIndicator';
 
 export interface StatusBarProps {
   modelInfo?: {
@@ -18,6 +19,7 @@ export interface StatusBarProps {
     cpu?: string;
     memory?: string;
   };
+  diarizationStatus?: DiarizationStatus;
   className?: string;
 }
 
@@ -25,6 +27,7 @@ const StatusBar: React.FC<StatusBarProps> = ({
   modelInfo,
   recordingInfo,
   systemInfo,
+  diarizationStatus,
   className,
 }) => {
   return (
@@ -85,7 +88,58 @@ const StatusBar: React.FC<StatusBarProps> = ({
             )}
           </div>
         )}
+        
+        {/* Diarization Status */}
+        {diarizationStatus && diarizationStatus.serviceHealth !== 'disabled' && (
+          <div className="flex items-center gap-2">
+            <Icon 
+              name={diarizationStatus.serviceHealth === 'ready' ? 'users' : 
+                    diarizationStatus.serviceHealth === 'initializing' ? 'clock' : 'users-x'} 
+              size="sm" 
+              className={cn(
+                diarizationStatus.serviceHealth === 'ready' ? 'text-secondary-600' :
+                diarizationStatus.serviceHealth === 'initializing' ? 'text-warning-600' : 'text-error-600'
+              )}
+            />
+            <span className="text-xs">
+              {diarizationStatus.serviceHealth === 'ready' && diarizationStatus.speakerCount !== undefined
+                ? `${diarizationStatus.speakerCount} speakers`
+                : diarizationStatus.serviceHealth === 'initializing'
+                ? 'Loading speakers...'
+                : 'Speaker detection error'
+              }
+            </span>
+            {diarizationStatus.serviceHealth === 'error' && (
+              <Badge variant="error" size="sm">
+                <Icon name="x-circle" size="sm" />
+                Error
+              </Badge>
+            )}
+          </div>
+        )}
       </div>
+      
+      {/* Center - Diarization Status (if recording) */}
+      {recordingInfo?.isRecording && diarizationStatus && diarizationStatus.serviceHealth !== 'disabled' && (
+        <div className="flex items-center gap-2">
+          <div 
+            className={cn(
+              'w-2 h-2 rounded-full',
+              diarizationStatus.serviceHealth === 'ready' ? 'bg-secondary-500' :
+              diarizationStatus.serviceHealth === 'initializing' ? 'bg-warning-500 animate-pulse' :
+              'bg-error-500'
+            )}
+          />
+          <span className="text-xs font-medium">
+            {diarizationStatus.serviceHealth === 'ready' && diarizationStatus.speakerCount !== undefined
+              ? `${diarizationStatus.speakerCount} speaker${diarizationStatus.speakerCount !== 1 ? 's' : ''}`
+              : diarizationStatus.serviceHealth === 'initializing'
+              ? 'Detecting speakers'
+              : 'Speaker error'
+            }
+          </span>
+        </div>
+      )}
       
       {/* Right side - Recording info */}
       <div className="flex items-center gap-4">
@@ -119,7 +173,8 @@ const StatusBar: React.FC<StatusBarProps> = ({
         {/* Privacy reminder */}
         <div className="flex items-center gap-1 text-secondary-600 dark:text-secondary-400">
           <Icon name="eye-slash" size="sm" />
-          <span>No Network Required</span>
+          <span className="hidden sm:inline">No Network Required</span>
+          <span className="sm:hidden">Private</span>
         </div>
       </div>
     </div>

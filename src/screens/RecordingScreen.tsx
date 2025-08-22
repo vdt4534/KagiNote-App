@@ -5,6 +5,8 @@ import { Icon } from '@/components/ui/Icon';
 import { TranscriptView, TranscriptSegment } from '@/components/features/TranscriptView';
 import { ControlBar } from '@/components/features/ControlBar';
 import { MeetingDetailsPanel } from '@/components/features/MeetingDetailsPanel';
+import { DiarizationStatusIndicator, DiarizationStatus } from '@/components/features/DiarizationStatusIndicator';
+import { SpeakerActivityDisplay, SpeakerActivity } from '@/components/features/SpeakerActivityDisplay';
 
 export interface SpeakerInfo {
   id: string;
@@ -25,6 +27,9 @@ export interface RecordingScreenProps {
   currentModel?: string;
   language?: string;
   participants?: string[];
+  diarizationStatus?: DiarizationStatus;
+  speakerActivities?: SpeakerActivity[];
+  hasOverlappingSpeech?: boolean;
   onStart: () => void;
   onPause: () => void;
   onResume: () => void;
@@ -53,6 +58,9 @@ export const RecordingScreen: React.FC<RecordingScreenProps> = ({
   currentModel = 'Standard',
   language = 'English',
   participants = [],
+  diarizationStatus,
+  speakerActivities = [],
+  hasOverlappingSpeech = false,
   onStart,
   onPause,
   onResume,
@@ -83,6 +91,19 @@ export const RecordingScreen: React.FC<RecordingScreenProps> = ({
         showDetailsButton={true}
       />
 
+      {/* Speaker Activity Panel (Mobile) */}
+      {speakerActivities.length > 0 && (
+        <div className="sm:hidden px-2 py-1 bg-white dark:bg-neutral-900 border-b border-neutral-200 dark:border-neutral-700">
+          <SpeakerActivityDisplay
+            speakers={speakerActivities}
+            currentSpeaker={currentSpeaker}
+            isProcessing={diarizationStatus?.serviceHealth === 'initializing'}
+            hasOverlappingSpeech={hasOverlappingSpeech}
+            layout="horizontal"
+          />
+        </div>
+      )}
+      
       {/* Main Transcript Area - Takes remaining height */}
       <div className="flex-1 min-h-0 p-2 sm:p-4">
         <Card className="h-full flex flex-col">
@@ -93,8 +114,16 @@ export const RecordingScreen: React.FC<RecordingScreenProps> = ({
                   Live Transcript
                 </h2>
                 
-                {/* Speaker Count */}
-                {speakers.size > 0 && (
+                {/* Diarization Status Indicator */}
+                {diarizationStatus && (
+                  <DiarizationStatusIndicator 
+                    status={diarizationStatus}
+                    className="hidden sm:flex"
+                  />
+                )}
+                
+                {/* Speaker Count (fallback for mobile) */}
+                {!diarizationStatus && speakers.size > 0 && (
                   <div className="flex items-center gap-1 px-2 py-1 rounded-full bg-neutral-100 dark:bg-neutral-800">
                     <Icon name="users" size="sm" className="text-neutral-600 dark:text-neutral-400" />
                     <span className="text-sm font-medium text-neutral-600 dark:text-neutral-400">
@@ -105,8 +134,20 @@ export const RecordingScreen: React.FC<RecordingScreenProps> = ({
               </div>
               
               <div className="flex items-center gap-3">
-                {/* Current Speaker Indicator */}
-                {isRecording && currentSpeaker && speakers.get(currentSpeaker) && (
+                {/* Speaker Activity Display */}
+                {speakerActivities.length > 0 && (
+                  <SpeakerActivityDisplay
+                    speakers={speakerActivities}
+                    currentSpeaker={currentSpeaker}
+                    isProcessing={diarizationStatus?.serviceHealth === 'initializing'}
+                    hasOverlappingSpeech={hasOverlappingSpeech}
+                    layout="compact"
+                    className="hidden sm:flex"
+                  />
+                )}
+                
+                {/* Current Speaker Indicator (fallback) */}
+                {(!speakerActivities.length || !diarizationStatus) && isRecording && currentSpeaker && speakers.get(currentSpeaker) && (
                   <div className="flex items-center gap-2">
                     <div 
                       className="w-3 h-3 rounded-full"
@@ -150,7 +191,7 @@ export const RecordingScreen: React.FC<RecordingScreenProps> = ({
       </div>
 
       {/* Minimal Status Bar - 40px height */}
-      <div className="h-10 px-2 sm:px-4 flex items-center justify-center border-t border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900">
+      <div className="h-10 px-2 sm:px-4 flex items-center justify-between border-t border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-900">
         <div className="flex items-center gap-3 sm:gap-6 text-[10px] sm:text-xs text-neutral-500 dark:text-neutral-400">
           <div className="flex items-center gap-1">
             <Icon name="shield-check" size="sm" className="text-secondary-600" />
@@ -164,6 +205,32 @@ export const RecordingScreen: React.FC<RecordingScreenProps> = ({
             <span className="sm:hidden">Private</span>
           </div>
         </div>
+        
+        {/* Diarization Status in Status Bar */}
+        {diarizationStatus && diarizationStatus.serviceHealth !== 'disabled' && (
+          <div className="flex items-center gap-2 text-[10px] sm:text-xs">
+            <div 
+              className={cn(
+                'w-1.5 h-1.5 rounded-full',
+                diarizationStatus.serviceHealth === 'ready' ? 'bg-secondary-500' :
+                diarizationStatus.serviceHealth === 'initializing' ? 'bg-warning-500 animate-pulse' :
+                'bg-error-500'
+              )}
+            />
+            <span className={cn(
+              diarizationStatus.serviceHealth === 'ready' ? 'text-secondary-600 dark:text-secondary-400' :
+              diarizationStatus.serviceHealth === 'initializing' ? 'text-warning-600 dark:text-warning-400' :
+              'text-error-600 dark:text-error-400'
+            )}>
+              {diarizationStatus.serviceHealth === 'ready' && diarizationStatus.speakerCount !== undefined
+                ? `${diarizationStatus.speakerCount} speakers`
+                : diarizationStatus.serviceHealth === 'initializing'
+                ? 'Detecting'
+                : 'Speaker error'
+              }
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Collapsible Details Panel */}

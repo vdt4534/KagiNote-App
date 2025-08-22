@@ -330,6 +330,15 @@ function App() {
       speakers: new Map(), // Reset speakers for new recording
       currentSpeaker: undefined,
       audioLevel: 0,
+      speakerActivities: [],
+      hasOverlappingSpeech: false,
+      diarizationStatus: config.modelId ? {
+        serviceHealth: 'initializing',
+        modelStatus: 'loading'
+      } : {
+        serviceHealth: 'disabled',
+        modelStatus: 'not_available'
+      },
     }));
 
     // Start actual backend transcription
@@ -644,6 +653,9 @@ function App() {
             currentSpeaker={appState.currentSpeaker}
             currentModel={appState.currentMeeting?.modelId}
             language={appState.currentMeeting?.language}
+            diarizationStatus={appState.diarizationStatus}
+            speakerActivities={appState.speakerActivities}
+            hasOverlappingSpeech={appState.hasOverlappingSpeech}
             onStart={() => {/* handled by controls */}}
             onPause={handlePauseRecording}
             onResume={handleResumeRecording}
@@ -686,13 +698,14 @@ function App() {
   }
 
   return (
-    <>
+    <ToastProvider>
       <AppLayout
         title="KagiNote"
         subtitle={getScreenSubtitle()}
         modelInfo={getModelInfo()}
         recordingInfo={getRecordingInfo()}
         systemInfo={{ privacy: true, cpu: '15%', memory: '2.1GB' }}
+        diarizationStatus={appState.diarizationStatus}
       >
         {renderCurrentScreen()}
       </AppLayout>
@@ -723,7 +736,7 @@ function App() {
           vadThreshold: 0.5,
         }}
       />
-    </>
+    </ToastProvider>
   );
 }
 
