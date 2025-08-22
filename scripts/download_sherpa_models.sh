@@ -1,13 +1,16 @@
 #!/bin/bash
 
-# Download Sherpa-ONNX speaker diarization models
-# These are proper ONNX models that work with ort in Rust
+# Download Sherpa-ONNX speaker diarization models for bundling with the app
+# These are publicly available ONNX models that work with ort in Rust
+# NO HUGGING FACE ACCESS REQUIRED - Models ship with the app
 
-MODELS_DIR="$HOME/Library/Application Support/KagiNote/models/diarization"
+# Download to the bundled resources directory (for shipping with app)
+MODELS_DIR="src-tauri/resources/models/diarization"
 mkdir -p "$MODELS_DIR"
 
-echo "=== Downloading Sherpa-ONNX Speaker Diarization Models ==="
-echo "Target: $MODELS_DIR"
+echo "=== Downloading Public Sherpa-ONNX Speaker Diarization Models ==="
+echo "Target: $MODELS_DIR (bundled with app)"
+echo "No authentication required - public models"
 echo ""
 
 # Download speaker segmentation model (VAD/segmentation)

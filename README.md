@@ -114,15 +114,15 @@ The latest version includes significant improvements to transcription accuracy a
 
 ## Speaker Diarization Implementation (August 2025)
 
-### ✅ Production-Ready 3D-Speaker ERes2NetV2 Integration
+### ✅ Production-Ready 3D-Speaker Integration 
 
-**🎯 State-of-the-Art Models:** KagiNote uses the latest 3D-Speaker ERes2NetV2 ONNX models for professional-grade speaker identification.
+**🎯 Public Models - No Authentication Required:** KagiNote uses publicly available Sherpa-ONNX speaker diarization models that ship with the app. Users don't need any special access or accounts.
 
 ### Current Implementation Status
 
 **✅ COMPLETED (August 2025):**
-- 3D-Speaker ERes2NetV2 ONNX models (71MB embedding + 6MB segmentation)
-- Bundled models ship with app - no network dependencies
+- Public 3D-Speaker ERes2NetV2 ONNX models from Sherpa-ONNX
+- Models bundled with app - NO downloads or authentication needed by users
 - Real-time processing with <1.5s latency
 - Comprehensive UI with status indicators and error handling
 - Full TDD test suite with 50+ tests
@@ -141,11 +141,13 @@ ndarray = "0.15"
 4. **Parallel Processing**: Runs alongside Whisper transcription for efficiency
 
 **Models & Storage:**
-- **Segmentation Model**: PyAnnote segmentation-3.0.onnx (6MB)
-- **Embedding Model**: 3D-Speaker ERes2NetV2.onnx (71MB) 
-- **Bundled Location**: `src-tauri/resources/models/diarization/`
+- **Segmentation Model**: Public Sherpa-ONNX segmentation model (6MB)
+- **Embedding Model**: Public 3D-Speaker ERes2NetV2 model (71MB) 
+- **Bundled Location**: `src-tauri/resources/models/diarization/` (ships with app)
 - **Runtime Cache**: `~/Library/Application Support/KagiNote/models/diarization/`
-- **Offline Operation**: Models bundled with app, no downloads required
+- **For Developers**: Run `./scripts/download_sherpa_models.sh` to get models for development
+
+**Important for Users**: Models are bundled with the app. End users don't need to download anything or have any special accounts. Everything works offline out of the box.
 
 ## Privacy & Security
 

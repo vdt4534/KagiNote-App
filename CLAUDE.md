@@ -373,20 +373,22 @@ KagiNote V2 includes state-of-the-art speaker diarization using 3D-Speaker ERes2
 
 ### CRITICAL IMPLEMENTATION REQUIREMENT
 
-**⚠️ MUST USE 3D-Speaker ERes2NetV2 ONNX MODELS ⚠️**
+**⚠️ MUST USE BUNDLED 3D-Speaker ERes2NetV2 ONNX MODELS ⚠️**
 
-The speaker diarization implementation uses direct ONNX Runtime integration with validated 3D-Speaker ERes2NetV2 models. This approach provides:
+The speaker diarization uses publicly available Sherpa-ONNX models that are bundled with the app:
+- **No Authentication Required**: Public models from Sherpa-ONNX GitHub releases
+- **Bundled with App**: Models ship with the application - users need NO special access
 - **Best Performance**: State-of-the-art accuracy for meeting scenarios
 - **Compatibility**: Works with ort 1.16 and Rust ecosystem
-- **Reliability**: Bundled models prevent network dependencies
-- **Privacy**: 100% local processing
+- **Privacy**: 100% local processing, no network calls
 
 ### Model Integration History (August 2025)
 
 **Issue Resolved:** Original implementation had corrupted models
 - **Problem**: ZIP archives instead of ONNX files causing "Protobuf parsing failed"
-- **Root Cause**: Model download scripts fetched wrong format
-- **Solution**: Direct download of validated ONNX models from sherpa-onnx releases
+- **Root Cause**: Initial model download scripts fetched wrong format
+- **Solution**: Use public Sherpa-ONNX models that require no authentication
+- **Distribution**: Models are bundled with app - users don't need to download anything
 
 **Current Architecture:**
 ```toml
