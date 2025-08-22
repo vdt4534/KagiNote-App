@@ -516,6 +516,8 @@ cargo test clear_all_speaker_data --manifest-path src-tauri/Cargo.toml
 | Similarity Search | <100ms | ~50ms |
 | Profile Creation | <200ms | ~150ms |
 | Real-time Processing | 1.5x realtime | 1.2x realtime |
+| Speech Boundary Detection | <500ms | ~500ms |
+| Segment Buffering | 3-15s | 3-15s |
 
 ### Privacy & Security
 
@@ -524,3 +526,38 @@ cargo test clear_all_speaker_data --manifest-path src-tauri/Cargo.toml
 - **Memory Protection**: Secure wiping of audio buffers after processing
 - **No Voice Samples Stored**: Only mathematical embeddings, never raw audio
 - **User Control**: Complete control over speaker data with export/import/delete options
+
+## Transcription Quality Improvements (August 2025)
+
+### Smart Speech Boundary Detection
+The transcription system now uses intelligent buffering with natural speech boundary detection instead of fixed-time segments:
+
+**Key Parameters:**
+```rust
+const MIN_AUDIO_DURATION_MS: u64 = 3000;  // 3 seconds minimum for context
+const MAX_AUDIO_DURATION_MS: u64 = 15000; // 15 seconds maximum
+const SILENCE_THRESHOLD: f32 = 0.02;      // Energy threshold for silence
+const SILENCE_DURATION_FOR_BOUNDARY_MS: u64 = 500; // 500ms silence = boundary
+```
+
+**How It Works:**
+1. Audio buffers until a natural pause (500ms silence) is detected
+2. Sends complete utterances to Whisper (3-15 second segments)
+3. Calculates accurate timestamps from actual recording time
+4. Checks for duplicate segments using Jaccard similarity (80% threshold)
+5. Filters out [BLANK_AUDIO] and [INAUDIBLE] segments
+
+**Benefits:**
+- Complete sentences and thoughts are transcribed
+- No more mid-sentence cuts
+- Accurate timestamps (no repetition)
+- No duplicate text segments
+- Better context for Whisper = higher accuracy
+- Natural speaker turn preservation
+
+### Segment Deduplication
+Implements text similarity checking to prevent repeated partial transcriptions:
+- Tracks last 3 segments for comparison
+- Uses Jaccard similarity coefficient
+- Checks for exact substring matches
+- 80% similarity threshold for duplicate detection

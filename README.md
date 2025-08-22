@@ -100,6 +100,16 @@ npm run tauri build
 - **Transcription Latency**: ~1.5 seconds for real-time display
 - **Speaker Detection**: <2 seconds for new speaker identification
 
+## Enhanced Transcription Quality
+
+The latest version includes significant improvements to transcription accuracy and readability:
+
+- **Smart Speech Boundary Detection**: Waits for natural pauses (500ms) before transcribing
+- **Complete Utterance Buffering**: Processes 3-15 second segments for better context  
+- **Accurate Timestamps**: Uses actual elapsed time, no more repetitions
+- **Segment Deduplication**: Prevents repeated text using 80% similarity threshold
+- **Noise Filtering**: Automatically removes [BLANK_AUDIO] and [INAUDIBLE] segments
+
 ## Speaker Diarization Implementation
 
 ### IMPORTANT: pyannote-rs Requirement

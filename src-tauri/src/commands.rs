@@ -17,7 +17,7 @@ use crate::models::{
 use crate::storage::{Database, SpeakerStore, EmbeddingIndex, SeedManager};
 use uuid::Uuid;
 use tauri::{Emitter, Manager, State};
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tracing;
@@ -1252,11 +1252,23 @@ async fn run_transcription_loop(
     let mut audio_level_counter = 0;
     let mut transcription_counter = 0;
     
-    // Audio buffering for minimum length requirement
+    // Enhanced audio buffering with speech boundary detection
     let mut audio_buffer: Vec<f32> = Vec::new();
     let mut buffer_timestamp = std::time::SystemTime::now();
-    const MIN_AUDIO_DURATION_MS: u64 = 1500; // 1.5 seconds minimum for Whisper
-    const MAX_BUFFER_SIZE: usize = 48000 * 3; // 3 seconds at 16kHz (safety limit)
+    let mut silence_duration_ms = 0u64;
+    let mut last_speech_time = std::time::SystemTime::now();
+    let mut consecutive_silence_chunks = 0;
+    
+    // Segment deduplication tracking
+    let mut recent_segments: VecDeque<(String, f32)> = VecDeque::with_capacity(3);
+    const SIMILARITY_THRESHOLD: f32 = 0.8; // 80% similarity means duplicate
+    
+    // Configurable buffering parameters
+    const MIN_AUDIO_DURATION_MS: u64 = 3000; // 3 seconds minimum for better context
+    const MAX_AUDIO_DURATION_MS: u64 = 15000; // 15 seconds maximum
+    const SILENCE_THRESHOLD: f32 = 0.02; // Energy threshold for silence
+    const SILENCE_DURATION_FOR_BOUNDARY_MS: u64 = 500; // 500ms silence = speech boundary
+    const MAX_BUFFER_SIZE: usize = 16000 * 15; // 15 seconds at 16kHz
     
     // Main processing loop - continue until session is stopped
     loop {
@@ -1325,27 +1337,50 @@ async fn run_transcription_loop(
             }
             audio_level_counter += 1;
             
-            // Add audio to buffer for transcription
-            if audio_level > 0.02 {
+            // Enhanced buffering with speech boundary detection
+            let is_speech = audio_level > SILENCE_THRESHOLD;
+            
+            if is_speech {
+                // Reset silence counter when speech detected
+                consecutive_silence_chunks = 0;
+                last_speech_time = std::time::SystemTime::now();
+                
                 // Reset buffer timestamp on first audio activity
                 if audio_buffer.is_empty() {
                     buffer_timestamp = std::time::SystemTime::now();
+                    tracing::debug!("Starting new audio buffer at speech onset");
                 }
                 
                 // Add samples to buffer
                 audio_buffer.extend_from_slice(&audio_data.samples);
+            } else if !audio_buffer.is_empty() {
+                // We have silence but there's audio in the buffer
+                consecutive_silence_chunks += 1;
                 
-                // Prevent buffer from growing too large
-                if audio_buffer.len() > MAX_BUFFER_SIZE {
-                    let excess = audio_buffer.len() - MAX_BUFFER_SIZE;
-                    audio_buffer.drain(0..excess);
-                    tracing::warn!("Audio buffer exceeded maximum size, trimmed {} samples", excess);
-                }
+                // Still add silence to buffer (important for natural speech)
+                audio_buffer.extend_from_slice(&audio_data.samples);
                 
-                // Check if we have enough audio for transcription
-                let buffer_duration_ms = buffer_timestamp.elapsed().unwrap_or_default().as_millis() as u64;
-                
-                if buffer_duration_ms >= MIN_AUDIO_DURATION_MS && !audio_buffer.is_empty() {
+                // Calculate silence duration (assuming ~100ms chunks)
+                silence_duration_ms = consecutive_silence_chunks as u64 * 100;
+            }
+            
+            // Prevent buffer from growing too large
+            if audio_buffer.len() > MAX_BUFFER_SIZE {
+                let excess = audio_buffer.len() - MAX_BUFFER_SIZE;
+                audio_buffer.drain(0..excess);
+                tracing::warn!("Audio buffer exceeded maximum size, trimmed {} samples", excess);
+            }
+            
+            // Determine if we should send buffer to transcription
+            let buffer_duration_ms = buffer_timestamp.elapsed().unwrap_or_default().as_millis() as u64;
+            let should_transcribe = !audio_buffer.is_empty() && (
+                // Natural speech boundary detected (silence after speech)
+                (silence_duration_ms >= SILENCE_DURATION_FOR_BOUNDARY_MS && buffer_duration_ms >= MIN_AUDIO_DURATION_MS) ||
+                // Maximum duration reached
+                buffer_duration_ms >= MAX_AUDIO_DURATION_MS
+            );
+            
+            if should_transcribe {
                     tracing::info!("Processing buffered audio: {} samples, {:.2}s duration", 
                                  audio_buffer.len(), buffer_duration_ms as f32 / 1000.0);
                     
@@ -1365,42 +1400,48 @@ async fn run_transcription_loop(
                         if let Some(ref engine) = *whisper_guard {
                             let context = TranscriptionContext::default();
                             match engine.transcribe(&buffered_audio, &context).await {
-                            Ok(result) => Some(result),
-                            Err(e) => {
-                                tracing::warn!("Transcription failed: {}", e);
-                                if let Err(emit_err) = app_handle.emit("transcription-error", serde_json::json!({
-                                    "type": "transcription_failed",
-                                    "message": format!("Transcription error: {}", e),
-                                    "sessionId": session_id,
-                                    "timestamp": std::time::SystemTime::now()
-                                        .duration_since(std::time::UNIX_EPOCH)
-                                        .unwrap_or_default()
-                                        .as_millis(),
-                                    "severity": "warning"
-                                })) {
-                                    tracing::error!("Failed to emit transcription error event: {}", emit_err);
+                                Ok(result) => Some(result),
+                                Err(e) => {
+                                    tracing::warn!("Transcription failed: {}", e);
+                                    if let Err(emit_err) = app_handle.emit("transcription-error", serde_json::json!({
+                                        "type": "transcription_failed",
+                                        "message": format!("Transcription error: {}", e),
+                                        "sessionId": session_id,
+                                        "timestamp": std::time::SystemTime::now()
+                                            .duration_since(std::time::UNIX_EPOCH)
+                                            .unwrap_or_default()
+                                            .as_millis(),
+                                        "severity": "warning"
+                                    })) {
+                                        tracing::error!("Failed to emit transcription error event: {}", emit_err);
+                                    }
+                                    None
                                 }
-                                None
                             }
+                        } else {
+                            tracing::warn!("No Whisper engine available - model may still be downloading");
+                            // Emit status update to inform frontend that model is not ready
+                            if let Err(emit_err) = app_handle.emit("model-status", serde_json::json!({
+                                "sessionId": session_id,
+                                "status": "downloading",
+                                "message": "Whisper model is still being downloaded. Transcription will begin once ready."
+                            })) {
+                                tracing::error!("Failed to emit model status event: {}", emit_err);
+                            }
+                            None
                         }
-                    } else {
-                        tracing::warn!("No Whisper engine available - model may still be downloading");
-                        // Emit status update to inform frontend that model is not ready
-                        if let Err(emit_err) = app_handle.emit("model-status", serde_json::json!({
-                            "sessionId": session_id,
-                            "status": "downloading",
-                            "message": "Whisper model is still being downloaded. Transcription will begin once ready."
-                        })) {
-                            tracing::error!("Failed to emit model status event: {}", emit_err);
-                        }
-                        None
-                    }
-                };
+                    };
                 
                 // Emit transcription updates if we got text
                 if let Some(result) = transcription_result {
-                    if !result.text.trim().is_empty() {
-                        tracing::info!("Emitting transcription update: '{}'", result.text);
+                    let cleaned_text = result.text.trim();
+                    
+                    // Check for duplicates, empty text, or BLANK_AUDIO
+                    if !cleaned_text.is_empty() 
+                        && !cleaned_text.contains("[BLANK_AUDIO]")
+                        && !cleaned_text.contains("[INAUDIBLE]")
+                        && !is_duplicate_segment(cleaned_text, &recent_segments, SIMILARITY_THRESHOLD) {
+                        tracing::info!("Emitting transcription update: '{}'", cleaned_text);
                         
                         // Determine speaker ID using diarization if enabled
                         let speaker_id = {
@@ -1487,14 +1528,37 @@ async fn run_transcription_loop(
                             }
                         };
 
-                        // Create the segment
+                        // Calculate actual timestamps from buffer
+                        let current_time = std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_secs() as f32;
+                        
+                        // Get session start time for relative timestamps
+                        let start_time = {
+                            let sessions_guard = state.active_sessions.lock().await;
+                            sessions_guard.get(&session_id)
+                                .map(|s| s.start_time as f32)
+                                .unwrap_or(current_time)
+                        };
+                        
+                        let segment_start = current_time - start_time - (buffer_duration_ms as f32 / 1000.0);
+                        let segment_end = current_time - start_time;
+                        
+                        // Create the segment with actual timestamps
                         let segment = serde_json::json!({
-                            "text": result.text,
-                            "startTime": transcription_counter as f32 * 1.5, // 1.5 second segments
-                            "endTime": (transcription_counter + 1) as f32 * 1.5,
+                            "text": cleaned_text,
+                            "startTime": segment_start,
+                            "endTime": segment_end,
                             "confidence": result.confidence,
                             "speaker": speaker_id
                         });
+                        
+                        // Add to recent segments for deduplication
+                        recent_segments.push_back((cleaned_text.to_string(), segment_end));
+                        if recent_segments.len() > 3 {
+                            recent_segments.pop_front();
+                        }
                         
                         // Store the segment in the session state
                         {
@@ -1523,16 +1587,20 @@ async fn run_transcription_loop(
                     tracing::debug!("No transcription result available");
                 }
                 
-                // Clear buffer after processing
+                // Clear buffer and reset counters after processing
                 audio_buffer.clear();
                 buffer_timestamp = std::time::SystemTime::now();
-                }
+                consecutive_silence_chunks = 0;
+                silence_duration_ms = 0;
+                tracing::debug!("Buffer cleared, ready for next segment");
             } else {
                 // No voice activity - clear buffer if it's been too long
                 let buffer_age_ms = buffer_timestamp.elapsed().unwrap_or_default().as_millis() as u64;
                 if buffer_age_ms > MIN_AUDIO_DURATION_MS * 2 && !audio_buffer.is_empty() {
                     tracing::debug!("Clearing stale audio buffer after {}ms", buffer_age_ms);
                     audio_buffer.clear();
+                    consecutive_silence_chunks = 0;
+                    silence_duration_ms = 0;
                 }
             }
             
@@ -1575,6 +1643,47 @@ fn calculate_audio_level(samples: &[f32]) -> f32 {
     
     // Normalize to 0-1 range (assuming typical audio levels)
     (rms * 10.0).min(1.0)
+}
+
+/// Calculate text similarity using simple word overlap
+fn calculate_text_similarity(text1: &str, text2: &str) -> f32 {
+    let words1: Vec<&str> = text1.split_whitespace().collect();
+    let words2: Vec<&str> = text2.split_whitespace().collect();
+    
+    if words1.is_empty() || words2.is_empty() {
+        return 0.0;
+    }
+    
+    let mut common_words = 0;
+    for word1 in &words1 {
+        if words2.contains(word1) {
+            common_words += 1;
+        }
+    }
+    
+    // Calculate Jaccard similarity
+    let union_size = words1.len() + words2.len() - common_words;
+    if union_size == 0 {
+        return 0.0;
+    }
+    
+    common_words as f32 / union_size as f32
+}
+
+/// Check if text is similar to recent segments
+fn is_duplicate_segment(text: &str, recent_segments: &VecDeque<(String, f32)>, threshold: f32) -> bool {
+    for (recent_text, _timestamp) in recent_segments {
+        // Check for exact substring match (partial transcriptions)
+        if text.starts_with(recent_text) || recent_text.starts_with(text) {
+            return true;
+        }
+        
+        // Check for high similarity
+        if calculate_text_similarity(text, recent_text) >= threshold {
+            return true;
+        }
+    }
+    false
 }
 
 // ============================================================================
