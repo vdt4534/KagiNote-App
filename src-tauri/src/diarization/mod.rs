@@ -11,6 +11,7 @@ pub mod embedder;
 pub mod clustering;
 pub mod buffer_manager;
 pub mod segment_merger;
+pub mod model_manager;
 
 // Re-export main types and service
 pub use types::*;

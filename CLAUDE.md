@@ -328,6 +328,41 @@ window.__TAURI__.event.listen('transcription-update', (event) => {
 
 KagiNote V2 includes advanced speaker diarization capabilities for identifying and separating multiple speakers in real-time during meetings.
 
+### CRITICAL IMPLEMENTATION REQUIREMENT
+
+**⚠️ MUST USE pyannote-rs - NEVER CREATE CUSTOM IMPLEMENTATIONS ⚠️**
+
+The speaker diarization MUST use pyannote-rs or its direct ONNX models. Do NOT attempt to create custom embedding extraction or diarization implementations. The current implementation uses ONNX Runtime directly due to temporary compatibility issues with pyannote-rs, but it follows the exact pyannote approach.
+
+### Dependency Resolution History (IMPORTANT)
+
+We encountered and resolved critical dependency issues with pyannote-rs:
+
+**Problem:** pyannote-rs v0.3.1 has incompatibility with ort (ONNX Runtime) versions
+- Error: `SessionInputValue From ArrayBase` type mismatches
+- Cause: pyannote-rs expects ort v2.0.0-rc.10 but has API incompatibilities
+- The altunenes fork with "Update-ort-dependency-to-rc.10" branch also had build issues
+
+**Solution Implemented:**
+```toml
+# src-tauri/Cargo.toml
+# Using direct ONNX runtime with compatible version
+ort = { version = "1.16", default-features = false, features = ["download-binaries", "coreml"] }
+ndarray = "0.15"
+```
+
+**Why This Works:**
+1. Uses stable ort 1.16 instead of release candidate versions
+2. Implements the exact pyannote segmentation and embedding approach
+3. Loads the same ONNX models (segmentation-3.0.onnx, wespeaker embeddings)
+4. Maintains compatibility while pyannote-rs resolves its dependency issues
+
+**Future Migration Path:**
+When pyannote-rs resolves ort compatibility, migrate back by:
+1. Replacing ort 1.16 with pyannote-rs latest version
+2. Using pyannote-rs's get_segments() and embedding functions directly
+3. Removing manual ONNX session management code
+
 ### Feature Overview
 
 - **Real-time Speaker Identification**: Detect up to 8 speakers simultaneously during recording

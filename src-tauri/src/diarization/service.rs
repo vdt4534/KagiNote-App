@@ -186,7 +186,7 @@ impl DiarizationService {
         tracing::debug!("Extracting embeddings from {:.2}s of audio at {}Hz", 
                        duration_seconds, sample_rate);
         
-        let embedder = self.embedder.lock().await;
+        let mut embedder = self.embedder.lock().await;
         embedder.extract_embeddings(audio_samples, sample_rate).await
             .map_err(|e| DiarizationError::EmbeddingError { 
                 message: format!("Embedding extraction failed: {}", e) 

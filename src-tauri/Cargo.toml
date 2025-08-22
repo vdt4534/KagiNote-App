@@ -64,7 +64,10 @@ sha2 = "0.10.0"
 rand = "0.8.0"
 
 # Speaker diarization dependencies
-# Note: pyannote-rs is not available, using placeholder implementation
+# Note: pyannote-rs has compatibility issues with current ort versions
+# Using manual ONNX runtime integration for now
+ort = { version = "1.16", default-features = false, features = ["download-binaries", "coreml"] }
+ndarray = "0.15"
 nalgebra = "0.33.0"
 petgraph = "0.6.0"
 

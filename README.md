@@ -16,7 +16,7 @@ KagiNote V2 is a **production-ready** desktop application built with Tauri v2, R
 - **🎛️ Quality Tiers**: Standard (1.5GB), High Accuracy (2.4GB), Turbo (1.2GB) models
 - **💾 Segment Storage**: Real-time transcription segments stored and accumulated during sessions
 - **🎯 Live Display**: Actual transcription text displayed in real-time (not placeholders)
-- **🎭 Speaker Diarization**: Real-time speaker identification with 512-dimensional embeddings
+- **🎭 Speaker Diarization**: Real-time speaker identification using pyannote models
 - **👥 Speaker Profiles**: Persistent speaker profiles with custom names, colors, and voice characteristics
 - **🔊 Voice Activity Detection**: Advanced speech detection with overlapping speaker support
 - **🎨 Adaptive Clustering**: Automatic speaker clustering with configurable similarity thresholds
@@ -73,6 +73,7 @@ npm run tauri build
 - **Real-time audio resampling** using linear interpolation (any rate → 16kHz for Whisper)
 - **Device intelligence** with built-in profiles for MacBook Pro/Air, iMac microphones
 - **Actual Whisper transcription** using whisper-rs with Metal acceleration
+- **Speaker Diarization** using pyannote ONNX models (segmentation-3.0, wespeaker embeddings)
 - **Persistent model caching** with integrity validation and metadata tracking
 - **Session state management** with concurrent session prevention
 - **Enhanced error diagnostics** with device-specific troubleshooting guidance
@@ -98,6 +99,34 @@ npm run tauri build
 - **First Run**: ~2 minutes for initial model download
 - **Transcription Latency**: ~1.5 seconds for real-time display
 - **Speaker Detection**: <2 seconds for new speaker identification
+
+## Speaker Diarization Implementation
+
+### IMPORTANT: pyannote-rs Requirement
+
+**⚠️ This project MUST use pyannote-rs for speaker diarization. NEVER attempt to create custom diarization implementations.**
+
+### Current Implementation Status
+
+Due to temporary dependency conflicts between pyannote-rs v0.3.1 and ort (ONNX Runtime) v2.0.0-rc.10, we're using a direct ONNX runtime integration that follows the exact pyannote approach:
+
+**Dependency Solution:**
+```toml
+# src-tauri/Cargo.toml
+ort = { version = "1.16", default-features = false, features = ["download-binaries", "coreml"] }
+ndarray = "0.15"
+```
+
+**What This Means:**
+1. We use the same pyannote ONNX models (segmentation-3.0.onnx, wespeaker embeddings)
+2. The implementation follows pyannote's exact segmentation and embedding approach
+3. When pyannote-rs resolves its ort compatibility issues, we'll migrate back seamlessly
+4. No custom diarization logic - only pyannote's proven approach
+
+**Models Used:**
+- **Segmentation**: pyannote/segmentation-3.0 (5.9MB)
+- **Embeddings**: wespeaker-voxceleb-resnet34-LM (24.5MB)
+- **Storage**: `~/Library/Application Support/KagiNote/models/diarization/`
 - **Stop Response**: <100ms immediate microphone release
 
 ## Privacy & Security
