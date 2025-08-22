@@ -137,6 +137,7 @@ const AppLayout: React.FC<AppLayoutProps> = ({
                         label: 'Transcripts', 
                         icon: 'document-text', 
                         badge: '3',
+                        active: currentScreen === 'transcripts',
                         onClick: () => {
                           onNavigate?.('transcripts');
                           setMobileMenuOpen(false);
@@ -146,6 +147,7 @@ const AppLayout: React.FC<AppLayoutProps> = ({
                         id: 'settings', 
                         label: 'Settings', 
                         icon: 'cog',
+                        active: currentScreen === 'settings',
                         onClick: () => {
                           onNavigate?.('settings');
                           setMobileMenuOpen(false);
@@ -197,12 +199,14 @@ const AppLayout: React.FC<AppLayoutProps> = ({
                     label: 'Transcripts', 
                     icon: 'document-text', 
                     badge: '3',
+                    active: currentScreen === 'transcripts',
                     onClick: () => onNavigate?.('transcripts')
                   },
                   { 
                     id: 'settings', 
                     label: 'Settings', 
                     icon: 'cog',
+                    active: currentScreen === 'settings',
                     onClick: () => onNavigate?.('settings')
                   },
                 ],

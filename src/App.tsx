@@ -5,13 +5,15 @@ import { AppLayout } from "./components/layout/AppLayout";
 import { Dashboard } from "./screens/Dashboard";
 import { NewMeetingModal, MeetingConfig } from "./screens/NewMeetingModal";
 import { RecordingScreen } from "./screens/RecordingScreen";
+import { TranscriptsPage } from "./screens/TranscriptsPage";
+import { SettingsPage, AppSettings } from "./screens/SettingsPage";
 import { TranscriptSegment, SpeakerInfo } from "./components/features/TranscriptView";
 import { TranscriptionController, FinalTranscriptionResult, TranscriptionError, TranscriptionUpdateEvent, TranscriptionConfig, TranscriptionControllerRef } from "./components/features/TranscriptionController";
 import { MeetingFile } from "./screens/Dashboard";
 import { ToastProvider } from "./components/ui/ToastContainer";
 import './styles/globals.css';
 
-type AppScreen = 'dashboard' | 'recording' | 'meeting-review';
+type AppScreen = 'dashboard' | 'recording' | 'meeting-review' | 'transcripts' | 'settings';
 
 interface AppState {
   isAppReady: boolean;
@@ -32,6 +34,7 @@ interface AppState {
   diarizationStatus?: any;
   speakerActivities?: any[];
   hasOverlappingSpeech?: boolean;
+  appSettings: AppSettings;
 }
 
 function App() {
@@ -53,6 +56,43 @@ function App() {
     errors: [],
     showNewMeetingModal: false,
     meetings: [],
+    appSettings: {
+      // General
+      theme: 'system',
+      language: 'en',
+      autoSaveInterval: 5,
+      defaultSaveLocation: '~/Documents/KagiNote',
+      startupBehavior: 'dashboard',
+      // Recording
+      defaultMicrophone: 'Default',
+      sampleRate: 48000,
+      bitDepth: 16,
+      vadThreshold: 0.5,
+      bufferSize: 4096,
+      autoPauseOnSilence: false,
+      silenceThreshold: 3,
+      // Transcription
+      defaultModel: 'standard',
+      autoDetectLanguage: true,
+      defaultLanguage: 'en',
+      punctuation: true,
+      profanityFilter: false,
+      timestampFormat: 'mm:ss',
+      // Speaker Diarization
+      enableDiarization: true,
+      maxSpeakers: 8,
+      speakerSimilarity: 0.7,
+      autoAssignNames: false,
+      // Privacy & Security
+      encryptData: false,
+      autoDeleteDays: 0,
+      analyticsOptOut: true,
+      // Import/Export
+      defaultExportFormat: 'pdf',
+      includeTimestamps: true,
+      includeSpeakerLabels: true,
+      exportQuality: 'high',
+    },
   });
 
   // Timer for recording duration
@@ -606,6 +646,10 @@ function App() {
         return appState.currentMeeting?.title || 'Live Recording';
       case 'meeting-review':
         return 'Meeting Review';
+      case 'transcripts':
+        return `${appState.meetings.length} Transcripts • 100% Local Storage`;
+      case 'settings':
+        return 'Configure Your Experience';
       default:
         return '100% Local Privacy • No Cloud Required';
     }
@@ -668,6 +712,55 @@ function App() {
             onSpeakerRename={handleSpeakerRename}
           />
         );
+      case 'transcripts':
+        return (
+          <TranscriptsPage
+            meetings={appState.meetings}
+            onOpenMeeting={(id) => {
+              console.log('Open meeting', id);
+              const meeting = appState.meetings.find(m => m.id === id);
+              if (meeting) {
+                console.log('Opening meeting:', meeting.title);
+                // TODO: Implement meeting review screen
+              }
+            }}
+            onDeleteMeeting={(id) => {
+              console.log('Delete meeting', id);
+              deleteMeetingFromStorage(id);
+            }}
+            onExportMeeting={(id, format) => {
+              console.log(`Export meeting ${id} as ${format}`);
+              // TODO: Implement export functionality
+            }}
+          />
+        );
+      case 'settings':
+        return (
+          <SettingsPage
+            settings={appState.appSettings}
+            onUpdateSettings={(updates) => {
+              setAppState(prev => ({
+                ...prev,
+                appSettings: { ...prev.appSettings, ...updates }
+              }));
+            }}
+            onSave={() => {
+              // Save settings to localStorage
+              localStorage.setItem('app-settings', JSON.stringify(appState.appSettings));
+              console.log('Settings saved');
+            }}
+            onCancel={() => {
+              // Revert to saved settings
+              const saved = localStorage.getItem('app-settings');
+              if (saved) {
+                setAppState(prev => ({
+                  ...prev,
+                  appSettings: JSON.parse(saved)
+                }));
+              }
+            }}
+          />
+        );
       default:
         return (
           <Dashboard
@@ -709,10 +802,12 @@ function App() {
       // Open new meeting modal instead of directly going to recording
       setAppState(prev => ({ ...prev, showNewMeetingModal: true }));
     } else if (screen === 'transcripts') {
-      // For now, just go to dashboard (transcripts are shown there)
-      setAppState(prev => ({ ...prev, currentScreen: 'dashboard' }));
+      // Navigate to transcripts page
+      setAppState(prev => ({ ...prev, currentScreen: 'transcripts' }));
+    } else if (screen === 'settings') {
+      // Navigate to settings page
+      setAppState(prev => ({ ...prev, currentScreen: 'settings' }));
     }
-    // Settings and other screens can be implemented later
   };
 
   return (

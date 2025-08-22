@@ -235,15 +235,21 @@ For complete design specifications, component patterns, and implementation guide
 - Privacy-first architecture validated through security audit
 - Cross-platform compatibility tested on Windows, macOS, Linux
 
-## UI Component Migration (December 2024)
+## UI Component Migration (August 2025)
 
 **shadcn/ui Integration:**
-- **Implemented Components**: Button, Badge, Input, Card, Select, Sheet, Label
+- **Implemented Components**: Button, Badge, Input, Card, Select, Sheet, Label, Tabs, Checkbox, Switch, Slider, Radio Group, Dropdown Menu, Alert Dialog, Separator, Progress
 - **Configuration**: New York style with TypeScript and Tailwind CSS
 - **Compatibility Layer**: `/components/ui/compat.ts` exports both new and legacy components
 - **Migration Strategy**: Gradual replacement with backward compatibility preserved
 - **Mobile Navigation**: Sheet component for responsive sidebar on mobile devices
 - **Component Variants**: CVA-based variant system with KagiNote design tokens mapped
+
+**New Pages Implementation:**
+- **Transcripts Page**: Complete transcript management with search, filters, batch operations, dual-view modes (grid/list)
+- **Settings Page**: Comprehensive settings interface with 7 categories (General, Recording, Transcription, Speakers, Models, Privacy, Export)
+- **Navigation System**: Fully functional sidebar navigation with active state indicators
+- **Data Integration**: Connected to localStorage for transcript persistence and settings management
 
 ## Parallel Development with Git Worktrees
 

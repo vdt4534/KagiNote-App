@@ -23,8 +23,11 @@ KagiNote V2 is a **production-ready** desktop application built with Tauri v2, R
 
 ### New V2 Interface
 - **📊 Modern Dashboard**: Meeting list with search, sorting, and filtering
+- **📄 Transcripts Page**: Complete transcript management with dual-view modes (grid/list), advanced search, batch operations
+- **⚙️ Settings Page**: Comprehensive settings interface with 7 categories covering all app functionality
+- **🗂️ Full Navigation System**: Functional sidebar navigation with active state indicators
 - **📁 Audio File Import**: Import and transcribe WAV, MP3, M4A, WebM files
-- **💾 Persistent Storage**: All meetings saved to localStorage with metadata
+- **💾 Persistent Storage**: All meetings and settings saved to localStorage with metadata
 - **🎨 Professional Design System**: Privacy-first visual language with business aesthetics
 - **🖥️ Platform-Aware**: Native look on macOS/Windows with platform-specific adaptations
 - **📱 Mobile Responsive**: Full mobile support with Sheet-based navigation
